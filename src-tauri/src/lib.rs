@@ -39,6 +39,7 @@ pub fn run() {
             is_hidden: Mutex::new(false),
         })
         .manage(shortcuts::RegisteredShortcuts::default())
+        .manage(shortcuts::AppIconVisibility::default())
         .manage(private_store::PrivateStore::default())
         .manage(shortcuts::MoveWindowState::default())
         .plugin(tauri_plugin_opener::init())

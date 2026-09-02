@@ -10,6 +10,14 @@ The fork survey collected 525 unique GitHub fork records and sampled up to five 
 
 Closer source inspection included DrewWalkup/nyx, b4sjoo/jarvis, SalosV/pluely, RedBeggins/Freely, Badbird3/pluely-fork, shinramenisbae/pluely, and lambdaflows/freely. Some remove licensing/telemetry, but none of these inspected snapshots fixes the Tauri/CSP baseline. The additional interview, document, or agent functionality would require more review. The minimal upstream base was selected for a controlled patch set.
 
+## App icon fix validation, 0.1.11 (2026-09-03)
+
+- Reproduced five failing frontend cases before the fix: the saved hidden preference was briefly replaced by the default at startup, the switch was inverted relative to its Hide label, a show event forced visibility on, a new Dashboard mount repeated the startup override, and failed native updates were saved as though they succeeded.
+- All 30 frontend tests pass, including six app icon checks for those cases and cross-window settings synchronization. The production TypeScript/Vite and native Windows release builds pass.
+- Native code applies the setting to both main and Dashboard, preserves it for newly created windows, reapplies it after showing windows, and avoids adding hidden windows or capture overlays to the taskbar.
+- A separate executable using the isolated identifier `com.mnproduction.pluely.icon-test` started successfully and exposed its toolbar to Windows accessibility inspection. Full taskbar visual verification was not completed: Computer Use returned `SetIsBorderRequired failed (0x80004002)` for screenshots and `coordinate input geometry is unavailable` for input. This remains a manual UI verification limitation.
+- Existing user app data and provider keys were not inspected or changed during verification. The delivered build retains the production app identifier.
+
 ## Recording fix validation, 0.1.10
 
 - Reproduced the reported Auto-detect to Manual failure with a React hook test before fixing it. The old hook left native capture running while displaying Start Recording.

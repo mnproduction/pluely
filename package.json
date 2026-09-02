@@ -1,7 +1,7 @@
 {
   "name": "pluely",
   "private": false,
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "Pluely Local: GPL desktop assistant with your own AI provider.",
   "author": {
     "name": "Srikanth Nani",

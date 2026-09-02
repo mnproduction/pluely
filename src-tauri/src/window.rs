@@ -5,6 +5,28 @@ use tauri::{App, AppHandle, Manager, Runtime, WebviewWindow, WebviewWindowBuilde
 // The offset from the top of the screen to the window
 const TOP_OFFSET: i32 = 54;
 
+// Windows can recreate its taskbar entry when a window is shown. Reapply the
+// saved app policy after showing it, without changing the user's preference.
+pub fn show_app_window<R: Runtime>(window: &WebviewWindow<R>) -> tauri::Result<()> {
+    window.show()?;
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    {
+        let visible = window
+            .state::<crate::shortcuts::AppIconVisibility>()
+            .0
+            .load(std::sync::atomic::Ordering::Relaxed);
+        window.set_skip_taskbar(!visible)?;
+    }
+    Ok(())
+}
+
+pub fn hide_app_window<R: Runtime>(window: &WebviewWindow<R>) -> tauri::Result<()> {
+    window.hide()?;
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    window.set_skip_taskbar(true)?;
+    Ok(())
+}
+
 /// Sets up the main window with custom positioning
 pub fn setup_main_window(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     // Try different possible window labels
@@ -94,14 +116,12 @@ pub fn toggle_dashboard(app: tauri::AppHandle) -> Result<(), String> {
         match dashboard_window.is_visible() {
             Ok(true) => {
                 // Window is visible, hide it
-                dashboard_window
-                    .hide()
+                hide_app_window(&dashboard_window)
                     .map_err(|e| format!("Failed to hide dashboard window: {}", e))?;
             }
             Ok(false) => {
                 // Window is hidden, show and focus it
-                dashboard_window
-                    .show()
+                show_app_window(&dashboard_window)
                     .map_err(|e| format!("Failed to show dashboard window: {}", e))?;
                 dashboard_window
                     .set_focus()
@@ -150,8 +170,11 @@ pub fn move_window(app: tauri::AppHandle, direction: String, step: i32) -> Resul
 pub fn create_dashboard_window<R: Runtime>(
     app: &AppHandle<R>,
 ) -> Result<WebviewWindow<R>, tauri::Error> {
-    let base_builder =
-        WebviewWindowBuilder::new(app, "dashboard", tauri::WebviewUrl::App("/dashboard".into()));
+    let base_builder = WebviewWindowBuilder::new(
+        app,
+        "dashboard",
+        tauri::WebviewUrl::App("/dashboard".into()),
+    );
 
     #[cfg(target_os = "macos")]
     let base_builder = base_builder
@@ -168,6 +191,11 @@ pub fn create_dashboard_window<R: Runtime>(
 
     #[cfg(not(target_os = "macos"))]
     let base_builder = base_builder
+        .skip_taskbar(
+            !app.state::<crate::shortcuts::AppIconVisibility>()
+                .0
+                .load(std::sync::atomic::Ordering::Relaxed),
+        )
         .title("Pluely Local - Dashboard")
         .center()
         .decorations(true)
@@ -192,7 +220,7 @@ fn setup_dashboard_close_handler<R: Runtime>(window: &WebviewWindow<R>) {
             // Prevent the window from being destroyed
             api.prevent_close();
             // Hide the window instead
-            if let Err(e) = window_clone.hide() {
+            if let Err(e) = hide_app_window(&window_clone) {
                 eprintln!("Failed to hide dashboard window on close: {}", e);
             }
         }
@@ -203,8 +231,7 @@ fn setup_dashboard_close_handler<R: Runtime>(window: &WebviewWindow<R>) {
 pub fn show_dashboard_window<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     if let Some(dashboard_window) = app.get_webview_window("dashboard") {
         // Window exists, show and focus it
-        dashboard_window
-            .show()
+        show_app_window(&dashboard_window)
             .map_err(|e| format!("Failed to show dashboard window: {}", e))?;
         dashboard_window
             .set_focus()
@@ -213,8 +240,7 @@ pub fn show_dashboard_window<R: Runtime>(app: &AppHandle<R>) -> Result<(), Strin
         // Window doesn't exist, create it and then show it
         let window = create_dashboard_window(app)
             .map_err(|e| format!("Failed to create dashboard window: {}", e))?;
-        window
-            .show()
+        show_app_window(&window)
             .map_err(|e| format!("Failed to show new dashboard window: {}", e))?;
         window
             .set_focus()

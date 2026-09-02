@@ -14,9 +14,11 @@ Requests go directly to your selected provider. You pay that provider for API us
 
 ## Local features
 
+Version 0.1.11 makes **Hide Icon from Dock/Taskbar** apply to both AI Assistant and Dashboard. Turning the switch on hides their taskbar entries. The preference is retained on startup and when windows are reopened; capture overlays always stay outside the taskbar. Hidden windows are not added to the taskbar when icon visibility is enabled.
+
 Version 0.1.10 fixes switching from Auto-detect to Manual recording, duplicate starts, and restarting after Discard or Stop & Send. On Windows, idle loopback audio no longer leaves capture stuck, and unavailable output devices produce an initialization error.
 
-The headphones panel records **system output audio** (for example, a call or a video). In Manual mode, click Start Recording, then Stop & Send. Discard stops recording without transcription. Microphone recording is a separate control. Close the previous Pluely Local executable before opening a newer build; version 0.1.10 uses the same app identifier and retains its existing settings and encrypted provider keys.
+The headphones panel records **system output audio** (for example, a call or a video). In Manual mode, click Start Recording, then Stop & Send. Discard stops recording without transcription. Microphone recording is a separate control. Close the previous Pluely Local executable before opening a newer build; updates use the same app identifier and retain existing settings and encrypted provider keys.
 
 The open-source implementation's themes, transparency, window movement, custom shortcuts, screenshot modes, chat follow-ups and attachments, response length/language, auto-scroll, saved prompts, and audio features are enabled. Generate with AI uses your configured provider.
 

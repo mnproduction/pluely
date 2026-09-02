@@ -12,14 +12,12 @@ import {
   updateAlwaysOnTop,
   updateAutostart,
   CustomizableState,
-  DEFAULT_CUSTOMIZABLE_STATE,
   CursorType,
   updateCursorType,
 } from "@/lib/storage";
 import { IContextType, ScreenshotConfig, TYPE_PROVIDER } from "@/types";
 import curl2Json from "@bany/curl-to-json";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { enable, disable } from "@tauri-apps/plugin-autostart";
 import {
@@ -128,7 +126,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   // Unified Customizable State
   const [customizable, setCustomizable] = useState<CustomizableState>(
-    DEFAULT_CUSTOMIZABLE_STATE
+    getCustomizableState
   );
   // All local features in this GPL source are available with your own provider.
   const localFeaturesEnabled = true;
@@ -281,25 +279,19 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     loadData();
   }, []);
 
-  // Handle customizable settings on state changes
+  // Each window starts with the persisted preference. Showing or opening a
+  // window must never temporarily replace it with the default visible state.
   useEffect(() => {
-    const applyCustomizableSettings = async () => {
-      try {
-        await Promise.all([
-          invoke("set_app_icon_visibility", {
-            visible: customizable.appIcon.isVisible,
-          }),
-          invoke("set_always_on_top", {
-            enabled: customizable.alwaysOnTop.isEnabled,
-          }),
-        ]);
-      } catch (error) {
-        console.error("Failed to apply customizable settings:", error);
-      }
-    };
+    invoke("set_app_icon_visibility", {
+      visible: customizable.appIcon.isVisible,
+    }).catch((error) => console.error("Failed to apply app icon visibility:", error));
+  }, [customizable.appIcon.isVisible]);
 
-    applyCustomizableSettings();
-  }, [customizable]);
+  useEffect(() => {
+    invoke("set_always_on_top", {
+      enabled: customizable.alwaysOnTop.isEnabled,
+    }).catch((error) => console.error("Failed to apply always on top:", error));
+  }, [customizable.alwaysOnTop.isEnabled]);
 
   useEffect(() => {
     const initializeAutostart = async () => {
@@ -327,35 +319,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     };
 
     initializeAutostart();
-  }, []);
-
-  // Listen for app icon hide/show events when window is toggled
-  useEffect(() => {
-    const handleAppIconVisibility = async (isVisible: boolean) => {
-      try {
-        await invoke("set_app_icon_visibility", { visible: isVisible });
-      } catch (error) {
-        console.error("Failed to set app icon visibility:", error);
-      }
-    };
-
-    const unlistenHide = listen("handle-app-icon-on-hide", async () => {
-      const currentState = getCustomizableState();
-      // Only hide app icon if user has set it to hide mode
-      if (!currentState.appIcon.isVisible) {
-        await handleAppIconVisibility(false);
-      }
-    });
-
-    const unlistenShow = listen("handle-app-icon-on-show", async () => {
-      // Always show app icon when window is shown, regardless of user setting
-      await handleAppIconVisibility(true);
-    });
-
-    return () => {
-      unlistenHide.then((fn) => fn());
-      unlistenShow.then((fn) => fn());
-    };
   }, []);
 
   // Listen to storage events for real-time sync (e.g., multi-tab)
@@ -482,14 +445,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   // Toggle handlers
   const toggleAppIconVisibility = async (isVisible: boolean) => {
+    await invoke("set_app_icon_visibility", { visible: isVisible });
     const newState = updateAppIconVisibility(isVisible);
     setCustomizable(newState);
-    try {
-      await invoke("set_app_icon_visibility", { visible: isVisible });
-      loadData();
-    } catch (error) {
-      console.error("Failed to toggle app icon visibility:", error);
-    }
   };
 
   const toggleAlwaysOnTop = async (isEnabled: boolean) => {

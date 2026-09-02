@@ -10,7 +10,7 @@ use tokio::time::{sleep, Duration};
 #[cfg(target_os = "macos")]
 use tauri_nspanel::ManagerExt;
 
-use crate::window::show_dashboard_window;
+use crate::window::{hide_app_window, show_app_window, show_dashboard_window};
 // State for window visibility
 pub struct WindowVisibility {
     #[allow(dead_code)]
@@ -170,7 +170,7 @@ fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
         }
 
         if !*is_hidden {
-            if let Err(e) = window.show() {
+            if let Err(e) = show_app_window(&window) {
                 eprintln!("Failed to show window: {}", e);
             }
             if let Err(e) = window.set_focus() {
@@ -189,16 +189,16 @@ fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
             #[cfg(target_os = "macos")]
             {
                 let panel = app.get_webview_window("main").unwrap();
-                let _ = panel.hide();
+                let _ = hide_app_window(&panel);
             }
             // Window is visible, hide it and handle app icon based on user settings
-            if let Err(e) = window.hide() {
+            if let Err(e) = hide_app_window(&window) {
                 eprintln!("Failed to hide window: {}", e);
             }
         }
         Ok(false) => {
             // Window is hidden, show it and handle app icon based on user settings
-            if let Err(e) = window.show() {
+            if let Err(e) = show_app_window(&window) {
                 eprintln!("Failed to show window: {}", e);
             }
 
@@ -225,7 +225,7 @@ fn handle_audio_shortcut<R: Runtime>(app: &AppHandle<R>) {
     if let Some(window) = app.get_webview_window("main") {
         // Ensure window is visible
         if let Ok(false) = window.is_visible() {
-            if let Err(_e) = window.show() {
+            if let Err(_e) = show_app_window(&window) {
                 return;
             }
             if let Err(e) = window.set_focus() {
@@ -255,7 +255,7 @@ fn handle_system_audio_shortcut<R: Runtime>(app: &AppHandle<R>) {
     if let Some(window) = app.get_webview_window("main") {
         // Ensure window is visible
         if let Ok(false) = window.is_visible() {
-            if let Err(e) = window.show() {
+            if let Err(e) = show_app_window(&window) {
                 eprintln!("Failed to show window: {}", e);
                 return;
             }
@@ -457,7 +457,15 @@ pub fn validate_shortcut_key(key: String) -> Result<bool, String> {
     }
 }
 
-/// Tauri command to set app icon visibility in dock/taskbar
+// Retained for app windows created or reopened after the setting changes.
+pub struct AppIconVisibility(pub AtomicBool);
+
+impl Default for AppIconVisibility {
+    fn default() -> Self {
+        Self(AtomicBool::new(true))
+    }
+}
+
 #[tauri::command]
 pub fn set_app_icon_visibility<R: Runtime>(app: AppHandle<R>, visible: bool) -> Result<(), String> {
     #[cfg(target_os = "macos")]
@@ -475,30 +483,23 @@ pub fn set_app_icon_visibility<R: Runtime>(app: AppHandle<R>, visible: bool) -> 
         })?;
     }
 
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
     {
-        // On Windows, control taskbar icon visibility
-        if let Some(window) = app.get_webview_window("main") {
-            window
-                .set_skip_taskbar(!visible)
-                .map_err(|e| format!("Failed to set taskbar visibility: {}", e))?;
-        } else {
-            eprintln!("Main window not found on Windows");
+        // The preference applies to both app windows. Capture overlays must
+        // always stay out of the taskbar, even when app icons are enabled.
+        for label in ["main", "dashboard"] {
+            if let Some(window) = app.get_webview_window(label) {
+                let hidden = !window.is_visible().map_err(|e| e.to_string())?;
+                window
+                    .set_skip_taskbar(!visible || hidden)
+                    .map_err(|e| format!("Failed to set {} taskbar visibility: {}", label, e))?;
+            }
         }
     }
 
-    #[cfg(target_os = "linux")]
-    {
-        // On Linux, control panel icon visibility
-        if let Some(window) = app.get_webview_window("main") {
-            window
-                .set_skip_taskbar(!visible)
-                .map_err(|e| format!("Failed to set panel visibility: {}", e))?;
-        } else {
-            eprintln!("Main window not found on Linux");
-        }
-    }
-
+    app.state::<AppIconVisibility>()
+        .0
+        .store(visible, Ordering::Relaxed);
     Ok(())
 }
 
@@ -522,13 +523,13 @@ fn handle_toggle_dashboard<R: Runtime>(app: &AppHandle<R>) {
         match dashboard_window.is_visible() {
             Ok(true) => {
                 // Window is visible, hide it
-                if let Err(e) = dashboard_window.hide() {
+                if let Err(e) = hide_app_window(&dashboard_window) {
                     eprintln!("Failed to hide dashboard window: {}", e);
                 }
             }
             Ok(false) => {
                 // Window is hidden, show and focus it
-                if let Err(e) = dashboard_window.show() {
+                if let Err(e) = show_app_window(&dashboard_window) {
                     eprintln!("Failed to show dashboard window: {}", e);
                 }
                 if let Err(e) = dashboard_window.set_focus() {
@@ -553,7 +554,7 @@ fn handle_focus_input<R: Runtime>(app: &AppHandle<R>) {
     if let Some(window) = app.get_webview_window("main") {
         // Ensure window is visible
         if let Ok(false) = window.is_visible() {
-            let _ = window.show();
+            let _ = show_app_window(&window);
         }
 
         let _ = window.set_focus();
