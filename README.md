@@ -16,6 +16,10 @@ Requests go directly to your selected provider. You pay that provider for API us
 
 ## Local features
 
+Version 0.1.13 extends **Hide Icon from Dock/Taskbar** on Windows to use [native utility windows](https://learn.microsoft.com/en-us/windows/win32/winmsg/extended-window-styles) (`WS_EX_TOOLWINDOW`) for both Assistant and Dashboard. The panels stay visible and interactive, while their taskbar and Alt+Tab entries are suppressed. Turning the setting off restores regular application windows. The policy is reapplied after reopening, resizing, maximizing/restoring, and changing Always on Top. Open Dashboard from the panel or by launching the executable again when its taskbar entry is hidden.
+
+This mode does not remove a process from Task Manager. Windows decides whether it groups the running application under Apps or Background processes; that grouping is not guaranteed by the documented window-style API and still needs a manual check on the target Windows version.
+
 Version 0.1.12 permits one instance per app identifier. Launching the executable again opens the existing Dashboard, even when the second copy has a different filename. Older builds without this guard can still run alongside it. Before switching from Pluely Local, use **Quit Pluely Local** in each running older build; the Dashboard's close button only hides its window. The new build has **Quit Mira Desk** in the sidebar.
 
 On Windows, the native application uses Microsoft WebView2 to render its interface. WebView2 creates browser, renderer, GPU, and utility processes; other applications can also use it. These are normal runtime processes, described in [Microsoft's process model](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/process-model). Changing this app's name or taskbar visibility does not hide running processes from Task Manager, and Microsoft runtime executables retain their own names.

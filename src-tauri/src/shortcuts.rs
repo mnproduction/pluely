@@ -485,14 +485,27 @@ pub fn set_app_icon_visibility<R: Runtime>(app: AppHandle<R>, visible: bool) -> 
 
     #[cfg(any(target_os = "windows", target_os = "linux"))]
     {
+        // Resize events can arrive while native frame styles are changing.
+        // Let their repair handler see the new policy, and roll it back on error.
+        let previous = app
+            .state::<AppIconVisibility>()
+            .0
+            .swap(visible, Ordering::Relaxed);
         // The preference applies to both app windows. Capture overlays must
         // always stay out of the taskbar, even when app icons are enabled.
         for label in ["main", "dashboard"] {
             if let Some(window) = app.get_webview_window(label) {
-                let hidden = !window.is_visible().map_err(|e| e.to_string())?;
-                window
-                    .set_skip_taskbar(!visible || hidden)
-                    .map_err(|e| format!("Failed to set {} taskbar visibility: {}", label, e))?;
+                if let Err(error) = crate::window::apply_app_icon_policy(&window, visible) {
+                    app.state::<AppIconVisibility>()
+                        .0
+                        .store(previous, Ordering::Relaxed);
+                    for restore_label in ["main", "dashboard"] {
+                        if let Some(restore_window) = app.get_webview_window(restore_label) {
+                            let _ = crate::window::apply_app_icon_policy(&restore_window, previous);
+                        }
+                    }
+                    return Err(format!("Failed to set {} taskbar visibility: {}", label, error));
+                }
             }
         }
     }
@@ -510,6 +523,11 @@ pub fn set_always_on_top<R: Runtime>(app: AppHandle<R>, enabled: bool) -> Result
         window
             .set_always_on_top(enabled)
             .map_err(|e| format!("Failed to set always on top: {}", e))?;
+        crate::window::apply_app_icon_policy(
+            &window,
+            app.state::<AppIconVisibility>().0.load(Ordering::Relaxed),
+        )
+        .map_err(|e| format!("Failed to retain app icon visibility: {}", e))?;
     } else {
         return Err("Main window not found".to_string());
     }

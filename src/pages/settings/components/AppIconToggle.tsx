@@ -38,6 +38,8 @@ export const AppIconToggle = ({ className }: AppIconToggleProps) => {
             </Label>
             <p className="text-xs text-muted-foreground mt-1">
               Applies to AI Assistant and Dashboard, including after reopening.
+              On Windows, keeps the panels visible as utility windows, outside
+              the taskbar and Alt+Tab. The process remains visible in Task Manager.
             </p>
           </div>
         </div>

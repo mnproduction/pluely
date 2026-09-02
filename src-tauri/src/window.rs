@@ -2,21 +2,34 @@
 use tauri::LogicalPosition;
 use tauri::{App, AppHandle, Manager, Runtime, WebviewWindow, WebviewWindowBuilder};
 
+#[cfg(target_os = "windows")]
+mod windows_style;
+
 // The offset from the top of the screen to the window
 const TOP_OFFSET: i32 = 54;
+
+/// Apply shell visibility without hiding the content of an app window.
+pub fn apply_app_icon_policy<R: Runtime>(
+    window: &WebviewWindow<R>,
+    visible: bool,
+) -> tauri::Result<()> {
+    #[cfg(target_os = "windows")]
+    windows_style::set_tool_window(window, !visible)?;
+
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    window.set_skip_taskbar(!visible || !window.is_visible()?)?;
+    Ok(())
+}
 
 // Windows can recreate its taskbar entry when a window is shown. Reapply the
 // saved app policy after showing it, without changing the user's preference.
 pub fn show_app_window<R: Runtime>(window: &WebviewWindow<R>) -> tauri::Result<()> {
+    let visible = window
+        .state::<crate::shortcuts::AppIconVisibility>()
+        .0
+        .load(std::sync::atomic::Ordering::Relaxed);
     window.show()?;
-    #[cfg(any(target_os = "windows", target_os = "linux"))]
-    {
-        let visible = window
-            .state::<crate::shortcuts::AppIconVisibility>()
-            .0
-            .load(std::sync::atomic::Ordering::Relaxed);
-        window.set_skip_taskbar(!visible)?;
-    }
+    apply_app_icon_policy(window, visible)?;
     Ok(())
 }
 
@@ -25,6 +38,26 @@ pub fn hide_app_window<R: Runtime>(window: &WebviewWindow<R>) -> tauri::Result<(
     #[cfg(any(target_os = "windows", target_os = "linux"))]
     window.set_skip_taskbar(true)?;
     Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn retain_utility_style<R: Runtime>(window: &WebviewWindow<R>) {
+    let app_window = window.clone();
+    window.on_window_event(move |event| {
+        // Tao also rebuilds styles when restoring/maximizing a window. Repair
+        // the utility style after that change; an already-correct style is a no-op.
+        if matches!(event, tauri::WindowEvent::Resized(_)) {
+            let visible = app_window
+                .state::<crate::shortcuts::AppIconVisibility>()
+                .0
+                .load(std::sync::atomic::Ordering::Relaxed);
+            if !visible {
+                if let Err(error) = apply_app_icon_policy(&app_window, false) {
+                    eprintln!("Failed to retain utility window style: {}", error);
+                }
+            }
+        }
+    });
 }
 
 /// Sets up the main window with custom positioning
@@ -40,6 +73,8 @@ pub fn setup_main_window(app: &mut App) -> Result<(), Box<dyn std::error::Error>
         .ok_or("No window found")?;
 
     position_window_top_center(&window, TOP_OFFSET)?;
+    #[cfg(target_os = "windows")]
+    retain_utility_style(&window);
 
     // Set window as non-focusable on Windows
     // #[cfg(target_os = "windows")]
@@ -209,6 +244,14 @@ pub fn create_dashboard_window<R: Runtime>(
         .visible(false);
 
     let window = base_builder.build()?;
+    apply_app_icon_policy(
+        &window,
+        app.state::<crate::shortcuts::AppIconVisibility>()
+            .0
+            .load(std::sync::atomic::Ordering::Relaxed),
+    )?;
+    #[cfg(target_os = "windows")]
+    retain_utility_style(&window);
 
     // Set up close event handler - hide window instead of destroying it
     setup_dashboard_close_handler(&window);
