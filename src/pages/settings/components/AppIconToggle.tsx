@@ -27,7 +27,7 @@ export const AppIconToggle = ({ className }: AppIconToggleProps) => {
     <div id="app-icon" className={`space-y-2 ${className}`}>
       <Header
         title="App Icon"
-        description="Control whether Pluely windows appear in the dock or taskbar"
+        description="Control whether Mira Desk windows appear in the dock or taskbar"
         isMainTitle
       />
       <div className="flex items-center justify-between">

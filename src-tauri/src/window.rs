@@ -170,6 +170,10 @@ pub fn move_window(app: tauri::AppHandle, direction: String, step: i32) -> Resul
 pub fn create_dashboard_window<R: Runtime>(
     app: &AppHandle<R>,
 ) -> Result<WebviewWindow<R>, tauri::Error> {
+    let title = format!(
+        "{} - Dashboard",
+        app.config().product_name.as_deref().unwrap_or("Mira Desk")
+    );
     let base_builder = WebviewWindowBuilder::new(
         app,
         "dashboard",
@@ -178,7 +182,7 @@ pub fn create_dashboard_window<R: Runtime>(
 
     #[cfg(target_os = "macos")]
     let base_builder = base_builder
-        .title("Pluely Local - Dashboard")
+        .title(&title)
         .center()
         .decorations(true)
         .inner_size(1200.0, 800.0)
@@ -196,7 +200,7 @@ pub fn create_dashboard_window<R: Runtime>(
                 .0
                 .load(std::sync::atomic::Ordering::Relaxed),
         )
-        .title("Pluely Local - Dashboard")
+        .title(&title)
         .center()
         .decorations(true)
         .inner_size(800.0, 600.0)

@@ -1,4 +1,3 @@
-import { SparklesIcon } from "lucide-react";
 import { Button } from "@/components";
 import { cn } from "@/lib/utils";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -18,12 +17,10 @@ export const Sidebar = () => {
         onClick={() => navigate("/dashboard")}
         className="flex h-16 items-center px-4 pt-10 gap-1.5"
       >
-        <div className="flex size-6 lg:size-7 items-center justify-center rounded-lg bg-primary">
-          <SparklesIcon className="size-4 lg:size-5 text-primary-foreground transition-all duration-300" />
-        </div>
+        <img src="/mira-desk.svg" alt="" className="size-6 lg:size-7 rounded-lg" />
         <div className="flex flex-col">
           <h1 className="text-xs lg:text-md font-semibold text-foreground transition-all duration-300">
-            Pluely Local
+            Mira Desk
           </h1>
           <span className="text-[8px] lg:text-[10px] text-muted-foreground -mt-1 block">
             {isLoading ? "Loading..." : `(v${version})`}

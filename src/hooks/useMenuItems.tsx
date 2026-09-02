@@ -80,7 +80,7 @@ export const useMenuItems = () => {
     },
     {
       icon: PowerIcon,
-      label: "Quit Pluely Local",
+      label: "Quit Mira Desk",
       action: async () => {
         await invoke("exit_app");
       },

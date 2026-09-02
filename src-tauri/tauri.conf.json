@@ -1,7 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Pluely Local",
-  "version": "0.1.11",
+  "productName": "Mira Desk",
+  "mainBinaryName": "MiraDesk",
+  "version": "0.1.12",
   "identifier": "com.mnproduction.pluely.local",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -13,7 +14,7 @@
     "macOSPrivateApi": true,
     "windows": [
       {
-        "title": "Pluely Local - AI Assistant",
+        "title": "Mira Desk - Assistant",
         "width": 600,
         "height": 54,
         "decorations": false,

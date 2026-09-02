@@ -1,6 +1,8 @@
-# Pluely Local
+# Mira Desk
 
 A Windows-focused GPL fork of [Pluely](https://github.com/iamsrikanthnani/pluely), based on the public 0.1.9 source at `62aa2d3d0390b832ac8a2b0cc9556fc096e58a98`. Original author: Srikanth Nani. Original GPL-3.0 license and attribution are retained. This fork does not contain the closed-source Pluely v1 implementation.
+
+Previously named Pluely Local. Version 0.1.12 introduces the Mira Desk name and icon, including window titles, Windows executable metadata, and `MiraDesk.exe`. The app identifier and storage keys remain unchanged, so existing Pluely Local settings, provider keys, and history are retained.
 
 ## Use your xAI key
 
@@ -14,11 +16,15 @@ Requests go directly to your selected provider. You pay that provider for API us
 
 ## Local features
 
+Version 0.1.12 permits one instance per app identifier. Launching the executable again opens the existing Dashboard, even when the second copy has a different filename. Older builds without this guard can still run alongside it. Before switching from Pluely Local, use **Quit Pluely Local** in each running older build; the Dashboard's close button only hides its window. The new build has **Quit Mira Desk** in the sidebar.
+
+On Windows, the native application uses Microsoft WebView2 to render its interface. WebView2 creates browser, renderer, GPU, and utility processes; other applications can also use it. These are normal runtime processes, described in [Microsoft's process model](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/process-model). Changing this app's name or taskbar visibility does not hide running processes from Task Manager, and Microsoft runtime executables retain their own names.
+
 Version 0.1.11 makes **Hide Icon from Dock/Taskbar** apply to both AI Assistant and Dashboard. Turning the switch on hides their taskbar entries. The preference is retained on startup and when windows are reopened; capture overlays always stay outside the taskbar. Hidden windows are not added to the taskbar when icon visibility is enabled.
 
 Version 0.1.10 fixes switching from Auto-detect to Manual recording, duplicate starts, and restarting after Discard or Stop & Send. On Windows, idle loopback audio no longer leaves capture stuck, and unavailable output devices produce an initialization error.
 
-The headphones panel records **system output audio** (for example, a call or a video). In Manual mode, click Start Recording, then Stop & Send. Discard stops recording without transcription. Microphone recording is a separate control. Close the previous Pluely Local executable before opening a newer build; updates use the same app identifier and retain existing settings and encrypted provider keys.
+The headphones panel records **system output audio** (for example, a call or a video). In Manual mode, click Start Recording, then Stop & Send. Discard stops recording without transcription. Microphone recording is a separate control.
 
 The open-source implementation's themes, transparency, window movement, custom shortcuts, screenshot modes, chat follow-ups and attachments, response length/language, auto-scroll, saved prompts, and audio features are enabled. Generate with AI uses your configured provider.
 
@@ -50,6 +56,8 @@ npm run tauri build -- --no-bundle
 ```
 
 For development: `npm run tauri dev`. VAD assets are copied from the installed, locked packages by `scripts/prepare-assets.mjs`; they are not fetched at application startup.
+
+The Windows executable is written to `src-tauri/target/release/MiraDesk.exe`.
 
 No upstream updater is enabled. Build newer revisions explicitly. Do not treat an arbitrary third-party installer as equivalent to these sources.
 

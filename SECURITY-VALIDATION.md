@@ -10,6 +10,16 @@ The fork survey collected 525 unique GitHub fork records and sampled up to five 
 
 Closer source inspection included DrewWalkup/nyx, b4sjoo/jarvis, SalosV/pluely, RedBeggins/Freely, Badbird3/pluely-fork, shinramenisbae/pluely, and lambdaflows/freely. Some remove licensing/telemetry, but none of these inspected snapshots fixes the Tauri/CSP baseline. The additional interview, document, or agent functionality would require more review. The minimal upstream base was selected for a controlled patch set.
 
+## Mira Desk branding and single instance, 0.1.12 (2026-09-03)
+
+- The application name, native icons, window titles, frontend branding, and Windows executable target are now Mira Desk / `MiraDesk.exe`. GPL attribution and the production identifier `com.mnproduction.pluely.local` are retained. No provider storage or history migration is needed for the rename.
+- The official `tauri-plugin-single-instance` 2.4.4 is registered before the other plugins. Its Windows implementation uses the app identifier for the instance guard, independently of the executable filename. The callback opens the existing Dashboard through the normal window visibility helpers.
+- All 30 frontend tests and the production TypeScript/Vite and native Windows release builds pass.
+- An executable built with the isolated identifier `com.mnproduction.pluely.single-instance-test` passed runtime checks for the Mira Desk document title, Dashboard native title, loaded SVG icon, Quit label, and native version 0.1.12. No production provider records or chat content were accessed.
+- Launching the same test executable twice kept the original process alive, exited the second process with code 0, and made the existing hidden Dashboard visible. Repeating with an executable copy under a different filename produced the same result. Normal Quit released the guard, and a fresh launch and second Quit succeeded.
+- The final production executable was rebuilt without the test configuration. Its Windows ProductName and FileDescription are `Mira Desk`, FileVersion is 0.1.12, and it embeds the production identifier and Assistant title, not the isolated test values.
+- Older Pluely Local builds and the original application do not implement this instance guard and must be fully quit separately. Their running processes were left untouched during validation. WebView2 runtime processes remain visible with Microsoft's executable names. The full Task Manager presentation was not visually verified; the runtime checks above verify app metadata and rendered branding.
+
 ## App icon fix validation, 0.1.11 (2026-09-03)
 
 - Reproduced five failing frontend cases before the fix: the saved hidden preference was briefly replaced by the default at startup, the switch was inverted relative to its Hide label, a show event forced visibility on, a new Dashboard mount repeated the startup override, and failed native updates were saved as though they succeeded.

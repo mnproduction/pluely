@@ -1,8 +1,8 @@
 {
-  "name": "pluely",
+  "name": "mira-desk",
   "private": false,
-  "version": "0.1.11",
-  "description": "Pluely Local: GPL desktop assistant with your own AI provider.",
+  "version": "0.1.12",
+  "description": "Mira Desk: GPL desktop assistant with your own AI provider.",
   "author": {
     "name": "Srikanth Nani",
     "email": "mail@srikanthnani.com",

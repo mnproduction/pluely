@@ -1,7 +1,8 @@
 [package]
 name = "pluely"
-version = "0.1.11"
-description = "The Open Source Alternative to Cluely - A lightning-fast, privacy-first AI assistant that works seamlessly during meetings, interviews, and conversations without anyone knowing."
+version = "0.1.12"
+description = "Mira Desk: a desktop assistant with your own AI provider, based on the GPL Pluely source."
+autobins = false
 authors = ["Srikanth Nani <mail@srikanthnani.com>"]
 license = "GPL-3.0"
 repository = "https://github.com/mnproduction/pluely"
@@ -20,6 +21,10 @@ edition = "2021"
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
 name = "pluely_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "MiraDesk"
+path = "src/main.rs"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -61,3 +66,4 @@ libpulse-simple-binding = "2.29.0"
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-autostart = "2.5.0"
+tauri-plugin-single-instance = "2.4.4"

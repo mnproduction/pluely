@@ -27,7 +27,15 @@ fn get_app_version() -> String {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let mut builder = tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        // Keep the existing instance, including its provider/session state.
+        if let Err(error) = window::show_dashboard_window(app) {
+            eprintln!("Failed to show the existing instance: {}", error);
+        }
+    }));
+    let mut builder = builder
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations("sqlite:pluely.db", db::migrations())

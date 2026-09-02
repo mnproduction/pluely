@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import { PageLayout } from "@/layouts";
 
 export default function Dashboard() {
-  return <PageLayout title="Pluely Local" description="Your providers. All local features enabled.">
+  return <PageLayout title="Mira Desk" description="Your providers. All local features enabled.">
     <div className="space-y-4 text-sm">
       <p>Open Dev Space, select Grok (xAI), and enter your API key and a model available to your xAI account. Select xAI Speech to Text for audio and enter the same key there.</p>
       <Link className="underline" to="/dev-space">Configure AI and speech providers</Link>
