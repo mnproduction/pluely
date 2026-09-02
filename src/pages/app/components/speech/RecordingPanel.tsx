@@ -4,6 +4,7 @@ import { MicIcon, StopCircleIcon, XIcon, Loader2 } from "lucide-react";
 interface RecordingPanelProps {
   isVadMode: boolean;
   isRecording: boolean;
+  isTransitioning: boolean;
   isProcessing: boolean;
   isAIProcessing: boolean;
   recordingProgress: number;
@@ -16,6 +17,7 @@ interface RecordingPanelProps {
 export const RecordingPanel = ({
   isVadMode,
   isRecording,
+  isTransitioning,
   isProcessing,
   isAIProcessing,
   recordingProgress,
@@ -48,16 +50,18 @@ export const RecordingPanel = ({
                 {!isRecording ? (
                   <Button
                     onClick={onStartRecording}
+                    disabled={isTransitioning}
                     className="flex-1 gap-1.5"
                     size="sm"
                   >
                     <MicIcon className="w-3.5 h-3.5" />
-                    Start Recording
+                    {isTransitioning ? "Starting..." : "Start Recording"}
                   </Button>
                 ) : (
                   <>
                     <Button
                       onClick={onIgnore}
+                      disabled={isTransitioning}
                       variant="outline"
                       size="sm"
                       className="flex-1 gap-1"
@@ -67,6 +71,7 @@ export const RecordingPanel = ({
                     </Button>
                     <Button
                       onClick={onStopAndSend}
+                      disabled={isTransitioning}
                       size="sm"
                       className="flex-1 gap-1"
                     >

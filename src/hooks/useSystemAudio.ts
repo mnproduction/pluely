@@ -84,6 +84,21 @@ export function useSystemAudio() {
   const [isContinuousMode, setIsContinuousMode] = useState<boolean>(false);
   const [isRecordingInContinuousMode, setIsRecordingInContinuousMode] =
     useState<boolean>(false);
+  const [isAudioTransitioning, setIsAudioTransitioning] = useState(false);
+  const audioTransitionRef = useRef(false);
+  const recordingRef = useRef(false);
+
+  // Refs also guard two clicks/keypresses before React has rendered again.
+  const beginAudioTransition = useCallback(() => {
+    if (audioTransitionRef.current) return false;
+    audioTransitionRef.current = true;
+    setIsAudioTransitioning(true);
+    return true;
+  }, []);
+  const endAudioTransition = useCallback(() => {
+    audioTransitionRef.current = false;
+    setIsAudioTransitioning(false);
+  }, []);
 
   const [conversation, setConversation] = useState<ChatConversation>({
     id: "",
@@ -162,29 +177,37 @@ export function useSystemAudio() {
     let stopUnlisten: (() => void) | undefined;
     let errorUnlisten: (() => void) | undefined;
     let discardedUnlisten: (() => void) | undefined;
+    let disposed = false;
+    const register = async (name: string, handler: (event: { payload: unknown }) => void) => {
+      const unlisten = await listen(name, (event) => { if (!disposed) handler(event); });
+      if (disposed) unlisten();
+      return unlisten;
+    };
 
     const setupContinuousListeners = async () => {
       try {
         // Progress updates (every second)
-        progressUnlisten = await listen("recording-progress", (event) => {
+        progressUnlisten = await register("recording-progress", (event) => {
           const seconds = event.payload as number;
           setRecordingProgress(seconds);
         });
 
         // Recording started
-        startUnlisten = await listen("continuous-recording-start", () => {
+        startUnlisten = await register("continuous-recording-start", () => {
+          recordingRef.current = true;
           setRecordingProgress(0);
           setIsRecordingInContinuousMode(true);
         });
 
         // Recording stopped
-        stopUnlisten = await listen("continuous-recording-stopped", () => {
+        stopUnlisten = await register("continuous-recording-stopped", () => {
+          recordingRef.current = false;
           setRecordingProgress(0);
           setIsRecordingInContinuousMode(false);
         });
 
         // Audio encoding errors
-        errorUnlisten = await listen("audio-encoding-error", (event) => {
+        errorUnlisten = await register("audio-encoding-error", (event) => {
           const errorMsg = event.payload as string;
           console.error("Audio encoding error:", errorMsg);
           setError(`Failed to process audio: ${errorMsg}`);
@@ -194,7 +217,7 @@ export function useSystemAudio() {
         });
 
         // Speech discarded (too short)
-        discardedUnlisten = await listen("speech-discarded", (event) => {
+        discardedUnlisten = await register("speech-discarded", (event) => {
           const reason = event.payload as string;
           console.log("Speech discarded:", reason);
           // Don't show error - this is expected behavior
@@ -207,6 +230,7 @@ export function useSystemAudio() {
     setupContinuousListeners();
 
     return () => {
+      disposed = true;
       if (progressUnlisten) progressUnlisten();
       if (startUnlisten) startUnlisten();
       if (stopUnlisten) stopUnlisten();
@@ -218,12 +242,13 @@ export function useSystemAudio() {
   // Handle single speech detection event (both VAD and continuous modes)
   useEffect(() => {
     let speechUnlisten: (() => void) | undefined;
+    let disposed = false;
 
     const setupEventListener = async () => {
       try {
         speechUnlisten = await listen("speech-detected", async (event) => {
           try {
-            if (!capturing) return;
+            if (disposed || !capturing) return;
 
             const base64Audio = event.payload as string;
             // Convert to blob
@@ -301,6 +326,7 @@ export function useSystemAudio() {
             setIsProcessing(false);
           }
         });
+        if (disposed) speechUnlisten();
       } catch (err) {
         setError("Failed to setup speech listener");
       }
@@ -309,6 +335,7 @@ export function useSystemAudio() {
     setupEventListener();
 
     return () => {
+      disposed = true;
       if (speechUnlisten) speechUnlisten();
     };
   }, [
@@ -427,7 +454,9 @@ export function useSystemAudio() {
 
   // Start continuous recording manually
   const startContinuousRecording = useCallback(async () => {
+    if (!capturing || vadConfig.enabled || recordingRef.current || !beginAudioTransition()) return;
     try {
+      recordingRef.current = true;
       setRecordingProgress(0);
       setError("");
 
@@ -442,28 +471,35 @@ export function useSystemAudio() {
         deviceId: deviceId,
       });
     } catch (err) {
+      recordingRef.current = false;
+      setIsRecordingInContinuousMode(false);
       console.error("Failed to start continuous recording:", err);
       setError(`Failed to start recording: ${err}`);
+    } finally {
+      endAudioTransition();
     }
-  }, [vadConfig, selectedAudioDevices.output.id]);
+  }, [capturing, vadConfig, selectedAudioDevices.output.id, beginAudioTransition, endAudioTransition]);
 
   // Ignore current recording (stop without transcription)
   const ignoreContinuousRecording = useCallback(async () => {
+    if (!isContinuousMode || !recordingRef.current || !beginAudioTransition()) return;
     try {
-      if (!isContinuousMode || !isRecordingInContinuousMode) return;
 
       // Stop the capture without processing
       await invoke<string>("stop_system_audio_capture");
 
       // Reset states
       setRecordingProgress(0);
+      recordingRef.current = false;
       setIsProcessing(false);
       setIsRecordingInContinuousMode(false);
     } catch (err) {
       console.error("Failed to ignore recording:", err);
       setError(`Failed to ignore recording: ${err}`);
+    } finally {
+      endAudioTransition();
     }
-  }, [isContinuousMode, isRecordingInContinuousMode]);
+  }, [isContinuousMode, beginAudioTransition, endAudioTransition]);
 
   // AI Processing function
   const processWithAI = useCallback(
@@ -548,6 +584,7 @@ export function useSystemAudio() {
   );
 
   const startCapture = useCallback(async () => {
+    if (!beginAudioTransition()) return;
     try {
       setError("");
 
@@ -559,6 +596,9 @@ export function useSystemAudio() {
       }
 
       const isContinuous = !vadConfig.enabled;
+      // Release any previous session before entering either mode.
+      await invoke("stop_system_audio_capture");
+      recordingRef.current = false;
 
       // Set up conversation
       const conversationId = generateConversationId("sysaudio");
@@ -582,9 +622,6 @@ export function useSystemAudio() {
       }
 
       // VAD mode: Start recording immediately
-      // Stop any existing capture
-      await invoke<string>("stop_system_audio_capture");
-
       const deviceId =
         selectedAudioDevices.output.id !== "default"
           ? selectedAudioDevices.output.id
@@ -596,13 +633,18 @@ export function useSystemAudio() {
         deviceId: deviceId,
       });
     } catch (err) {
+      setCapturing(false);
+      setIsContinuousMode(false);
       const errorMessage = err instanceof Error ? err.message : String(err);
       setError(errorMessage);
       setIsPopoverOpen(true);
+    } finally {
+      endAudioTransition();
     }
-  }, [vadConfig, selectedAudioDevices.output.id]);
+  }, [vadConfig, selectedAudioDevices.output.id, beginAudioTransition, endAudioTransition]);
 
   const stopCapture = useCallback(async () => {
+    if (!beginAudioTransition()) return;
     try {
       // Abort any ongoing AI requests
       if (abortControllerRef.current) {
@@ -615,6 +657,7 @@ export function useSystemAudio() {
 
       // Reset ALL states
       setCapturing(false);
+      recordingRef.current = false;
       setIsProcessing(false);
       setIsAIProcessing(false);
       setIsContinuousMode(false);
@@ -628,17 +671,15 @@ export function useSystemAudio() {
       const errorMessage = err instanceof Error ? err.message : String(err);
       setError(`Failed to stop capture: ${errorMessage}`);
       console.error("Stop capture error:", err);
+    } finally {
+      endAudioTransition();
     }
-  }, []);
+  }, [beginAudioTransition, endAudioTransition]);
 
   // Manual stop for continuous recording
   const manualStopAndSend = useCallback(async () => {
+    if (!isContinuousMode || !recordingRef.current || !beginAudioTransition()) return;
     try {
-      if (!isContinuousMode) {
-        console.warn("Not in continuous mode");
-        return;
-      }
-
       // Show processing state immediately
       setIsProcessing(true);
 
@@ -649,8 +690,10 @@ export function useSystemAudio() {
       setError(`Failed to manually stop: ${errorMessage}`);
       setIsProcessing(false); // Clear processing state on error
       console.error("Manual stop error:", err);
+    } finally {
+      endAudioTransition();
     }
-  }, [isContinuousMode]);
+  }, [isContinuousMode, beginAudioTransition, endAudioTransition]);
 
   const handleSetup = useCallback(async () => {
     try {
@@ -703,7 +746,7 @@ export function useSystemAudio() {
         await startCapture();
       }
     });
-  }, [startCapture, stopCapture]);
+  }, [capturing, startCapture, stopCapture]);
 
   useEffect(() => {
     return () => {
@@ -780,24 +823,34 @@ export function useSystemAudio() {
 
   // Update VAD configuration
   const updateVadConfiguration = useCallback(async (config: VadConfig) => {
+    if (!beginAudioTransition()) return;
     try {
-      setVadConfig(config);
-      safeLocalStorage.setItem("vad_config", JSON.stringify(config));
-      await invoke("update_vad_config", { config });
-    } catch (error) {
-      console.error("Failed to update VAD config:", error);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (capturing) {
-      setIsContinuousMode(!vadConfig.enabled);
-
-      if (!vadConfig.enabled) {
+      // The native task holds a config snapshot. Updating it in memory cannot
+      // change a running VAD task into a manual task.
+      const modeChanged = config.enabled !== vadConfig.enabled;
+      if (capturing && modeChanged) {
+        await invoke("stop_system_audio_capture");
+        recordingRef.current = false;
         setIsRecordingInContinuousMode(false);
+        setRecordingProgress(0);
       }
+      await invoke("update_vad_config", { config });
+      setVadConfig(config);
+      setIsContinuousMode(capturing && !config.enabled);
+      safeLocalStorage.setItem("vad_config", JSON.stringify(config));
+      if (capturing && modeChanged && config.enabled) {
+        await invoke("start_system_audio_capture", {
+          vadConfig: config,
+          deviceId: selectedAudioDevices.output.id === "default" ? null : selectedAudioDevices.output.id,
+        });
+      }
+      setError("");
+    } catch (err) {
+      setError(`Failed to change recording settings: ${err}`);
+    } finally {
+      endAudioTransition();
     }
-  }, [vadConfig.enabled, capturing]);
+  }, [capturing, vadConfig.enabled, selectedAudioDevices.output.id, beginAudioTransition, endAudioTransition]);
 
   // Keyboard arrow key support for scrolling (local shortcut)
   useEffect(() => {
@@ -829,7 +882,9 @@ export function useSystemAudio() {
   useEffect(() => {
     const handleRecordingShortcuts = (e: KeyboardEvent) => {
       if (!isPopoverOpen || !isContinuousMode) return;
-      if (isProcessing || isAIProcessing) return;
+      if (isProcessing || isAIProcessing || audioTransitionRef.current || e.repeat) return;
+      const target = e.target as HTMLElement;
+      if (target.closest?.("input, textarea, button, [contenteditable=true], [role=combobox]")) return;
 
       // Enter: Start recording (when not recording) or Stop & Send (when recording)
       if (e.key === "Enter" && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
@@ -868,6 +923,7 @@ export function useSystemAudio() {
     isPopoverOpen,
     isContinuousMode,
     isRecordingInContinuousMode,
+    isAudioTransitioning,
     isProcessing,
     isAIProcessing,
     startContinuousRecording,
@@ -877,6 +933,7 @@ export function useSystemAudio() {
 
   return {
     capturing,
+    isAudioTransitioning,
     isProcessing,
     isAIProcessing,
     lastTranscription,

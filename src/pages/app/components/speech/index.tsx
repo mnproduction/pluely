@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils";
 export const SystemAudio = (props: useSystemAudioType) => {
   const {
     capturing,
+    isAudioTransitioning,
     isProcessing,
     isAIProcessing,
     lastTranscription,
@@ -186,6 +187,7 @@ export const SystemAudio = (props: useSystemAudioType) => {
         <Button
           size="icon"
           title={getButtonTitle()}
+          disabled={isAudioTransitioning}
           onClick={handleToggleCapture}
           className={cn(
             capturing && "bg-green-50 hover:bg-green-100",
@@ -213,6 +215,7 @@ export const SystemAudio = (props: useSystemAudioType) => {
                     isVadMode={isVadMode}
                     onModeChange={handleModeChange}
                     disabled={
+                      isAudioTransitioning ||
                       isRecordingInContinuousMode ||
                       isProcessing ||
                       isAIProcessing
@@ -338,6 +341,7 @@ export const SystemAudio = (props: useSystemAudioType) => {
                     <RecordingPanel
                       isVadMode={isVadMode}
                       isRecording={isRecordingInContinuousMode}
+                      isTransitioning={isAudioTransitioning}
                       isProcessing={isProcessing}
                       isAIProcessing={isAIProcessing}
                       recordingProgress={recordingProgress}

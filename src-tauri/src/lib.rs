@@ -4,9 +4,8 @@ mod capture;
 mod db;
 mod shortcuts;
 mod window;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use tauri::{AppHandle, Manager, WebviewWindow};
-use tokio::task::JoinHandle;
 mod speaker;
 use capture::CaptureState;
 use speaker::VadConfig;
@@ -17,9 +16,8 @@ use tauri_nspanel::{cocoa::appkit::NSWindowCollectionBehavior, panel_delegate, W
 
 #[derive(Default)]
 pub struct AudioState {
-    stream_task: Arc<Mutex<Option<JoinHandle<()>>>>,
-    vad_config: Arc<Mutex<VadConfig>>,
-    is_capturing: Arc<Mutex<bool>>,
+    stream_task: tokio::sync::Mutex<Option<speaker::CaptureSession>>,
+    vad_config: Mutex<VadConfig>,
 }
 
 #[tauri::command]

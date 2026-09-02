@@ -10,7 +10,16 @@ The fork survey collected 525 unique GitHub fork records and sampled up to five 
 
 Closer source inspection included DrewWalkup/nyx, b4sjoo/jarvis, SalosV/pluely, RedBeggins/Freely, Badbird3/pluely-fork, shinramenisbae/pluely, and lambdaflows/freely. Some remove licensing/telemetry, but none of these inspected snapshots fixes the Tauri/CSP baseline. The additional interview, document, or agent functionality would require more review. The minimal upstream base was selected for a controlled patch set.
 
-## Verified checks
+## Recording fix validation, 0.1.10
+
+- Reproduced the reported Auto-detect to Manual failure with a React hook test before fixing it. The old hook left native capture running while displaying Start Recording.
+- 24 frontend tests pass, including eight recording lifecycle checks: mode switching, duplicate starts, discard/restart, manual-to-auto switching, retry after device failure, empty audio, keyboard focus, and event-listener cleanup.
+- Six default native release tests pass, including three new session lifecycle tests for cancellation cleanup, manual stop, and natural completion.
+- Two additional Windows hardware tests were explicitly enabled and passed: loopback capture remained active for 3.5 seconds and was discarded/restarted twice; an unavailable device returned an initialization error. Captured samples were discarded in memory, without transcription, storage, or network requests.
+- Native start/stop commands share a mutex through teardown. Manual stop uses a session-specific signal and waits for completion. The time limit and progress reporting also work while the output is idle. Windows initializes COM on its capture thread and no longer hides initialization errors behind a fabricated sample rate.
+- Existing provider settings and chat databases were not inspected or reset. No live xAI call was used for these checks.
+
+## Initial 0.1.9 verified checks
 
 - Frontend TypeScript and Vite production build pass.
 - 16 Vitest checks pass, using synthetic credentials. They exercise xAI chat/image streaming, xAI STT multipart ordering, provider URL validation, redirect configuration, literal secret placeholders in chat text, storage migration, failed writes/retry, and cross-window updates.

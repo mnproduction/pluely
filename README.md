@@ -14,6 +14,10 @@ Requests go directly to your selected provider. You pay that provider for API us
 
 ## Local features
 
+Version 0.1.10 fixes switching from Auto-detect to Manual recording, duplicate starts, and restarting after Discard or Stop & Send. On Windows, idle loopback audio no longer leaves capture stuck, and unavailable output devices produce an initialization error.
+
+The headphones panel records **system output audio** (for example, a call or a video). In Manual mode, click Start Recording, then Stop & Send. Discard stops recording without transcription. Microphone recording is a separate control. Close the previous Pluely Local executable before opening a newer build; version 0.1.10 uses the same app identifier and retains its existing settings and encrypted provider keys.
+
 The open-source implementation's themes, transparency, window movement, custom shortcuts, screenshot modes, chat follow-ups and attachments, response length/language, auto-scroll, saved prompts, and audio features are enabled. Generate with AI uses your configured provider.
 
 Pluely's hosted model service, billing, remote prompt catalog, and proprietary v1 features are not included. No license is forged or sent to the upstream service.
@@ -39,7 +43,7 @@ Requires Windows, Rust, MSVC C++ build tools, WebView2, Node.js and npm.
 npm ci --ignore-scripts
 npm test
 npm run build
-cargo test --manifest-path src-tauri/Cargo.toml --lib private_store
+cargo test --manifest-path src-tauri/Cargo.toml --locked --release --lib --features tauri/custom-protocol
 npm run tauri build -- --no-bundle
 ```
 

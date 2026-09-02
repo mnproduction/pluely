@@ -8,7 +8,29 @@ use std::task::{Poll, Waker};
 use std::thread;
 use std::time::Duration;
 use tracing::error;
-use wasapi::{get_default_device, DeviceCollection, Direction, SampleType, StreamMode, WaveFormat};
+use wasapi::{
+    get_default_device, DeviceCollection, Direction, SampleType, StreamMode, WasapiError,
+    WaveFormat,
+};
+
+struct CaptureThreadCleanup(Arc<Mutex<WakerState>>);
+impl Drop for CaptureThreadCleanup {
+    fn drop(&mut self) {
+        let mut state = self.0.lock().unwrap();
+        state.shutdown = true;
+        if let Some(waker) = state.waker.take() {
+            drop(state);
+            waker.wake();
+        }
+    }
+}
+
+struct ComApartment;
+impl Drop for ComApartment {
+    fn drop(&mut self) {
+        wasapi::deinitialize();
+    }
+}
 
 pub fn get_input_devices() -> Result<Vec<AudioDevice>> {
     let mut devices = Vec::new();
@@ -94,9 +116,6 @@ fn find_device_by_id(direction: &Direction, device_id: &str) -> Option<wasapi::D
         if let Ok(device) = collection.get_device_at_index(i) {
             if let Ok(id) = device.get_id() {
                 if id == device_id {
-                    let name = device
-                        .get_friendlyname()
-                        .unwrap_or_else(|_| "Unknown".to_string());
                     return Some(device);
                 }
             }
@@ -122,7 +141,7 @@ impl SpeakerInput {
     }
 
     // Starts the audio stream
-    pub fn stream(self) -> SpeakerStream {
+    pub fn stream(self) -> Result<SpeakerStream> {
         let sample_queue = Arc::new(Mutex::new(VecDeque::new()));
         let waker_state = Arc::new(Mutex::new(WakerState {
             waker: None,
@@ -136,6 +155,7 @@ impl SpeakerInput {
         let device_id = self.device_id;
 
         let capture_thread = thread::spawn(move || {
+            let _cleanup = CaptureThreadCleanup(waker_clone.clone());
             if let Err(e) =
                 SpeakerStream::capture_audio_loop(queue_clone, waker_clone, init_tx, device_id)
             {
@@ -143,24 +163,16 @@ impl SpeakerInput {
             }
         });
 
-        let actual_sample_rate = match init_rx.recv_timeout(Duration::from_secs(5)) {
-            Ok(Ok(rate)) => rate,
-            Ok(Err(e)) => {
-                error!("Pluely Audio initialization failed: {}", e);
-                44100
-            }
-            Err(_) => {
-                error!("Pluely Audio initialization timeout");
-                44100
-            }
-        };
-
-        SpeakerStream {
+        let mut stream = SpeakerStream {
             sample_queue,
             waker_state,
             capture_thread: Some(capture_thread),
-            actual_sample_rate,
-        }
+            actual_sample_rate: 0,
+        };
+        stream.actual_sample_rate = init_rx
+            .recv_timeout(Duration::from_secs(5))
+            .map_err(|e| anyhow::anyhow!("Audio initialization did not complete: {}", e))??;
+        Ok(stream)
     }
 }
 
@@ -188,25 +200,14 @@ impl SpeakerStream {
         init_tx: mpsc::Sender<Result<u32>>,
         device_id: Option<String>,
     ) -> Result<()> {
+        wasapi::initialize_mta().ok()?;
+        let _com = ComApartment;
         let init_result = (|| -> Result<_> {
             let device = match device_id {
-                Some(ref id) => match find_device_by_id(&Direction::Render, id) {
-                    Some(d) => {
-                        let name = d
-                            .get_friendlyname()
-                            .unwrap_or_else(|_| "Unknown".to_string());
-                        d
-                    }
-                    None => {
-                        get_default_device(&Direction::Render).expect("No default render device")
-                    }
-                },
+                Some(ref id) => find_device_by_id(&Direction::Render, id)
+                    .ok_or_else(|| anyhow::anyhow!("Selected output device is unavailable"))?,
                 None => get_default_device(&Direction::Render)?,
             };
-
-            let device_name = device
-                .get_friendlyname()
-                .unwrap_or_else(|_| "Unknown".to_string());
 
             let mut audio_client = device.get_iaudioclient()?;
 
@@ -245,15 +246,18 @@ impl SpeakerStream {
                         }
                     }
 
-                    if h_event.wait_for_event(3000).is_err() {
-                        error!("Pluely timeout error, stopping capture");
-                        break;
+                    match h_event.wait_for_event(100) {
+                        Ok(()) => {}
+                        // Loopback produces no packets while the output is idle.
+                        // Keep waiting, and check shutdown at least every 100ms.
+                        Err(WasapiError::EventTimeout) => continue,
+                        Err(e) => return Err(e.into()),
                     }
 
                     let mut temp_queue = VecDeque::new();
                     if let Err(e) = render_client.read_from_device_to_deque(&mut temp_queue) {
                         error!("Pluely Failed to read audio data: {}", e);
-                        continue;
+                        return Err(e.into());
                     }
 
                     if temp_queue.is_empty() {
@@ -376,5 +380,42 @@ impl Stream for SpeakerStream {
                 None => Poll::Pending,
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::speaker::CaptureSession;
+    use futures_util::StreamExt;
+
+    #[tokio::test]
+    #[ignore = "requires a Windows audio output device; samples are discarded locally"]
+    async fn loopback_can_wait_then_discard_and_restart() {
+        for _ in 0..2 {
+            let mut stream = SpeakerInput::new(None).unwrap().stream().unwrap();
+            assert!((8000..=96000).contains(&stream.sample_rate()));
+            let session = CaptureSession::spawn(
+                async move { while stream.next().await.is_some() {} },
+                None,
+                || {},
+            );
+            tokio::time::sleep(Duration::from_millis(3500)).await;
+            assert!(
+                session.is_active(),
+                "capture must survive an idle output device"
+            );
+            tokio::time::timeout(Duration::from_secs(2), session.discard())
+                .await
+                .unwrap();
+        }
+    }
+
+    #[test]
+    #[ignore = "enumerates Windows audio output devices"]
+    fn missing_device_is_an_error_instead_of_a_fake_running_stream() {
+        let input =
+            SpeakerInput::new(Some("pluely-test-device-that-does-not-exist".into())).unwrap();
+        assert!(input.stream().is_err());
     }
 }

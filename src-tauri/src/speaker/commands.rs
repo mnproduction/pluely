@@ -1,5 +1,5 @@
 // Pluely AI Speech Detection, and capture system audio (speaker output) as a stream of f32 samples.
-use crate::speaker::{AudioDevice, SpeakerInput};
+use crate::speaker::{AudioDevice, CaptureSession, SpeakerInput};
 use anyhow::Result;
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use futures_util::StreamExt;
@@ -7,11 +7,10 @@ use hound::{WavSpec, WavWriter};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::io::Cursor;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter, Listener, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_shell::ShellExt;
+use tokio::sync::oneshot;
 use tracing::{error, warn};
 
 // VAD Configuration
@@ -52,17 +51,13 @@ pub async fn start_system_audio_capture(
 ) -> Result<(), String> {
     let state = app.state::<crate::AudioState>();
 
-    // Check if already capturing (atomic check)
-    {
-        let guard = state
-            .stream_task
-            .lock()
-            .map_err(|e| format!("Failed to acquire lock: {}", e))?;
-
-        if guard.is_some() {
-            warn!("Capture already running");
-            return Err("Capture already running".to_string());
-        }
+    // Serialize start/stop through actual native resource teardown.
+    let mut current = state.stream_task.lock().await;
+    if current.as_ref().is_some_and(CaptureSession::is_active) {
+        return Err("Capture already running".to_string());
+    }
+    if let Some(finished) = current.take() {
+        finished.wait().await;
     }
 
     // Update VAD config if provided
@@ -79,7 +74,9 @@ pub async fn start_system_audio_capture(
         format!("Failed to access system audio: {}", e)
     })?;
 
-    let stream = input.stream();
+    let stream = input
+        .stream()
+        .map_err(|e| format!("Failed to start system audio: {}", e))?;
     let sr = stream.sample_rate();
 
     // Validate sample rate
@@ -98,35 +95,29 @@ pub async fn start_system_audio_capture(
         .map_err(|e| format!("Failed to read VAD config: {}", e))?
         .clone();
 
-    // Mark as capturing BEFORE spawning task
-    *state
-        .is_capturing
-        .lock()
-        .map_err(|e| format!("Failed to set capturing state: {}", e))? = true;
-
     // Emit capture started event
     let _ = app_clone.emit("capture-started", sr);
 
-    let state_clone = app.state::<crate::AudioState>();
-    let task = tokio::spawn(async move {
-        if vad_config.enabled {
-            run_vad_capture(app_clone.clone(), stream, sr, vad_config).await;
-        } else {
-            run_continuous_capture(app_clone.clone(), stream, sr, vad_config).await;
-        }
-
-        let state = app_clone.state::<crate::AudioState>();
-        {
-            if let Ok(mut guard) = state.stream_task.lock() {
-                *guard = None;
-            };
-        }
-    });
-
-    *state_clone
-        .stream_task
-        .lock()
-        .map_err(|e| format!("Failed to store task: {}", e))? = Some(task);
+    let continuous = !vad_config.enabled;
+    let (stop_sender, stop_receiver) = oneshot::channel();
+    let stopped_app = app.clone();
+    *current = Some(CaptureSession::spawn(
+        async move {
+            if vad_config.enabled {
+                run_vad_capture(app_clone.clone(), stream, sr, vad_config).await;
+            } else {
+                run_continuous_capture(app_clone.clone(), stream, sr, vad_config, stop_receiver)
+                    .await;
+            }
+        },
+        continuous.then_some(stop_sender),
+        move || {
+            if continuous {
+                let _ = stopped_app.emit("continuous-recording-stopped", ());
+            }
+            let _ = stopped_app.emit("capture-stopped", ());
+        },
+    ));
 
     Ok(())
 }
@@ -262,6 +253,7 @@ async fn run_continuous_capture(
     stream: impl StreamExt<Item = f32> + Unpin,
     sr: u32,
     config: VadConfig,
+    mut manual_stop: oneshot::Receiver<()>,
 ) {
     let mut stream = stream;
     let max_samples = (sr as u64 * config.max_recording_duration_secs) as usize;
@@ -271,14 +263,9 @@ async fn run_continuous_capture(
     let start_time = Instant::now();
     let max_duration = Duration::from_secs(config.max_recording_duration_secs);
 
-    // Atomic flag for manual stop
-    let stop_flag = Arc::new(AtomicBool::new(false));
-    let stop_flag_for_listener = stop_flag.clone();
-
-    // Listen for manual stop event
-    let stop_listener = app.listen("manual-stop-continuous", move |_| {
-        stop_flag_for_listener.store(true, Ordering::Release);
-    });
+    let deadline = tokio::time::sleep(max_duration);
+    tokio::pin!(deadline);
+    let mut progress = tokio::time::interval(Duration::from_secs(1));
 
     // Emit recording started
     let _ = app.emit(
@@ -286,39 +273,24 @@ async fn run_continuous_capture(
         config.max_recording_duration_secs,
     );
 
-    // Accumulate audio - check stop flag on EVERY sample for immediate response
     loop {
-        // Check stop flag FIRST on every iteration for immediate stopping
-        if stop_flag.load(Ordering::Acquire) {
-            break;
-        }
-
         tokio::select! {
+            biased;
+            _ = &mut manual_stop => break,
+            _ = &mut deadline => break,
+            _ = progress.tick() => {
+                let _ = app.emit("recording-progress", start_time.elapsed().as_secs());
+            }
             sample_opt = stream.next() => {
                 match sample_opt {
                     Some(sample) => {
-                        if stop_flag.load(Ordering::Acquire) {
-                            break;
-                        }
-
                         audio_buffer.push(sample);
-
-                        let elapsed = start_time.elapsed();
-
-                        // Emit progress every second
-                        if audio_buffer.len() % (sr as usize) == 0 {
-                            let _ = app.emit("recording-progress", elapsed.as_secs());
-                        }
 
                         // Check size limit (safety)
                         if audio_buffer.len() >= max_samples {
                             break;
                         }
 
-                        // Check time limit
-                        if elapsed >= max_duration {
-                            break;
-                        }
                     },
                     None => {
                         warn!("Audio stream ended unexpectedly");
@@ -326,13 +298,9 @@ async fn run_continuous_capture(
                     }
                 }
             }
-            _ = tokio::time::sleep(tokio::time::Duration::from_millis(10)) => {
-            }
         }
     }
-
-    // Clean up event listener (CRITICAL)
-    app.unlisten(stop_listener);
+    drop(stream);
 
     // Process and emit audio
     if !audio_buffer.is_empty() {
@@ -355,8 +323,6 @@ async fn run_continuous_capture(
         warn!("No audio captured in continuous mode");
         let _ = app.emit("audio-encoding-error", "No audio recorded");
     }
-
-    let _ = app.emit("continuous-recording-stopped", ());
 }
 
 // Apply noise gate
@@ -461,43 +427,26 @@ fn samples_to_wav_b64(sample_rate: u32, mono_f32: &[f32]) -> Result<String, Stri
 #[tauri::command]
 pub async fn stop_system_audio_capture(app: AppHandle) -> Result<(), String> {
     let state = app.state::<crate::AudioState>();
-
-    // Abort task in separate scope (Send trait fix)
-    {
-        let mut guard = state
-            .stream_task
-            .lock()
-            .map_err(|e| format!("Failed to acquire task lock: {}", e))?;
-
-        if let Some(task) = guard.take() {
-            task.abort();
-        }
+    let mut current = state.stream_task.lock().await;
+    if let Some(session) = current.take() {
+        session.discard().await;
     }
-
-    // LONGER delay for proper cleanup (300ms instead of 150ms)
-    tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
-
-    // Mark as not capturing
-    *state
-        .is_capturing
-        .lock()
-        .map_err(|e| format!("Failed to update capturing state: {}", e))? = false;
-
-    // Additional cleanup delay (CRITICAL for mic indicator)
-    tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
-
-    // Emit stopped event
-    let _ = app.emit("capture-stopped", ());
     Ok(())
 }
 
 /// Manual stop for continuous recording
 #[tauri::command]
 pub async fn manual_stop_continuous(app: AppHandle) -> Result<(), String> {
-    let _ = app.emit("manual-stop-continuous", ());
-
-    tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
-
+    let state = app.state::<crate::AudioState>();
+    let mut current = state.stream_task.lock().await;
+    if let Some(session) = current.as_mut() {
+        session.request_send()?;
+    } else {
+        return Err("No manual recording is running".to_string());
+    }
+    if let Some(session) = current.take() {
+        session.wait().await;
+    }
     Ok(())
 }
 
@@ -589,11 +538,13 @@ pub async fn update_vad_config(app: AppHandle, config: VadConfig) -> Result<(), 
 #[tauri::command]
 pub async fn get_capture_status(app: AppHandle) -> Result<bool, String> {
     let state = app.state::<crate::AudioState>();
-    let is_capturing = *state
-        .is_capturing
+    let active = state
+        .stream_task
         .lock()
-        .map_err(|e| format!("Failed to get capture status: {}", e))?;
-    Ok(is_capturing)
+        .await
+        .as_ref()
+        .is_some_and(CaptureSession::is_active);
+    Ok(active)
 }
 
 #[tauri::command]
@@ -603,7 +554,9 @@ pub fn get_audio_sample_rate(_app: AppHandle) -> Result<u32, String> {
         format!("Failed to access system audio: {}", e)
     })?;
 
-    let stream = input.stream();
+    let stream = input
+        .stream()
+        .map_err(|e| format!("Failed to start system audio: {}", e))?;
     let sr = stream.sample_rate();
 
     Ok(sr)
