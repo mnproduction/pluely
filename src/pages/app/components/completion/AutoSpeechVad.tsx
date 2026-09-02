@@ -6,7 +6,6 @@ import { useState } from "react";
 import { Button } from "@/components";
 import { useApp } from "@/contexts";
 import { floatArrayToWav } from "@/lib/utils";
-import { shouldUsePluelyAPI } from "@/lib/functions/pluely.api";
 
 interface AutoSpeechVADProps {
   submit: UseCompletionReturn["submit"];
@@ -30,19 +29,21 @@ const AutoSpeechVADInternal = ({
       : {};
 
   const vad = useMicVAD({
+    baseAssetPath: "/vad/",
+    onnxWASMBasePath: "/vad/",
     userSpeakingThreshold: 0.6,
     startOnLoad: true,
-    additionalAudioConstraints: audioConstraints,
+    getStream: () => navigator.mediaDevices.getUserMedia({ audio: audioConstraints }),
+    resumeStream: () => navigator.mediaDevices.getUserMedia({ audio: audioConstraints }),
     onSpeechEnd: async (audio) => {
       try {
         // convert float32array to blob
         const audioBlob = floatArrayToWav(audio, 16000, "wav");
 
         let transcription: string;
-        const usePluelyAPI = await shouldUsePluelyAPI();
 
         // Check if we have a configured speech provider
-        if (!selectedSttProvider.provider && !usePluelyAPI) {
+        if (!selectedSttProvider.provider) {
           console.warn("No speech provider selected");
           setState((prev: any) => ({
             ...prev,
@@ -56,7 +57,7 @@ const AutoSpeechVADInternal = ({
           (p) => p.id === selectedSttProvider.provider
         );
 
-        if (!providerConfig && !usePluelyAPI) {
+        if (!providerConfig) {
           console.warn("Selected speech provider configuration not found");
           setState((prev: any) => ({
             ...prev,
@@ -70,7 +71,7 @@ const AutoSpeechVADInternal = ({
 
         // Use the fetchSTT function for all providers
         transcription = await fetchSTT({
-          provider: usePluelyAPI ? undefined : providerConfig,
+          provider: providerConfig,
           selectedProvider: selectedSttProvider,
           audio: audioBlob,
         });

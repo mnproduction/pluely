@@ -6,7 +6,7 @@ import { useState, useEffect, useMemo } from "react";
 import { getResponseSettings } from "@/lib";
 
 export const LanguageSelector = () => {
-  const { hasActiveLicense } = useApp();
+  const { localFeaturesEnabled } = useApp();
   const [selectedLanguage, setSelectedLanguage] = useState<string>("english");
 
   useEffect(() => {
@@ -15,7 +15,7 @@ export const LanguageSelector = () => {
   }, []);
 
   const handleLanguageChange = (languageId: string) => {
-    if (!hasActiveLicense) {
+    if (!localFeaturesEnabled) {
       return;
     }
     setSelectedLanguage(languageId);
@@ -43,7 +43,7 @@ export const LanguageSelector = () => {
           onChange={handleLanguageChange}
           options={languageOptions}
           placeholder="Select a language"
-          disabled={!hasActiveLicense}
+          disabled={!localFeaturesEnabled}
         />
       </div>
     </div>

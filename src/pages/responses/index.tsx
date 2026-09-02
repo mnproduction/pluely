@@ -7,14 +7,14 @@ import { PageLayout } from "@/layouts";
 import { useApp } from "@/contexts";
 
 const Responses = () => {
-  const { hasActiveLicense } = useApp();
+  const { localFeaturesEnabled } = useApp();
 
   return (
     <PageLayout
       title="Response Settings"
       description="Customize how AI generates and displays responses"
     >
-      {!hasActiveLicense && (
+      {!localFeaturesEnabled && (
         <div className="p-4 bg-primary/10 border border-primary/20 rounded-lg">
           <p className="text-[10px] lg:text-sm text-foreground font-medium mb-2">
             🔒 Premium Features

@@ -8,22 +8,17 @@ import {
 } from "@/components";
 import { SparklesIcon } from "lucide-react";
 import { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { fetchAIResponse } from "@/lib/functions/ai-response.function";
 import { useApp } from "@/contexts";
 
 interface GenerateSystemPromptProps {
   onGenerate: (prompt: string, promptName: string) => void;
 }
 
-interface SystemPromptResponse {
-  prompt_name: string;
-  system_prompt: string;
-}
-
 export const GenerateSystemPrompt = ({
   onGenerate,
 }: GenerateSystemPromptProps) => {
-  const { hasActiveLicense } = useApp();
+  const { localFeaturesEnabled, allAiProviders, selectedAIProvider } = useApp();
   const [userPrompt, setUserPrompt] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,12 +34,14 @@ export const GenerateSystemPrompt = ({
       setIsGenerating(true);
       setError(null);
 
-      const response = await invoke<SystemPromptResponse>(
-        "create_system_prompt",
-        {
-          userPrompt: userPrompt.trim(),
-        }
-      );
+      let generated = "";
+      for await (const chunk of fetchAIResponse({
+        provider: allAiProviders.find((p) => p.id === selectedAIProvider.provider),
+        selectedProvider: selectedAIProvider,
+        systemPrompt: "Write a reusable system prompt for the behavior requested. Return only the prompt text, without a preamble or code fences.",
+        userMessage: userPrompt.trim(),
+      })) generated += chunk;
+      const response = { system_prompt: generated.trim(), prompt_name: userPrompt.trim().slice(0, 60) };
 
       if (response.system_prompt && response.prompt_name) {
         onGenerate(response.system_prompt, response.prompt_name);
@@ -100,7 +97,7 @@ export const GenerateSystemPrompt = ({
 
           {error && <p className="text-xs text-destructive">{error}</p>}
 
-          {hasActiveLicense ? (
+          {localFeaturesEnabled ? (
             <Button
               className="w-full"
               onClick={handleGenerate}

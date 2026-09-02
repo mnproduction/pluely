@@ -36,7 +36,7 @@ import {
 
 const View = () => {
   const { conversationId } = useParams();
-  const { hasActiveLicense, supportsImages } = useApp();
+  const { localFeaturesEnabled, supportsImages } = useApp();
   const navigate = useNavigate();
   const [messages, setMessages] = useState<ChatConversation | null>(null);
 
@@ -236,7 +236,7 @@ const View = () => {
         )}
 
         <div className="relative flex items-start gap-2 p-4">
-          {!hasActiveLicense && (
+          {!localFeaturesEnabled && (
             <div className="select-none p-5 z-100 bg-primary/5 border border-primary/20 rounded-xl absolute top-4 left-4 right-4">
               <div className="max-w-sm mx-auto">
                 <p className="text-sm font-medium text-center">
@@ -270,14 +270,14 @@ const View = () => {
                     isLoading={completion.isLoading}
                     isFilesPopoverOpen={completion.isFilesPopoverOpen}
                     setIsFilesPopoverOpen={completion.setIsFilesPopoverOpen}
-                    disabled={!hasActiveLicense || !supportsImages}
+                    disabled={!localFeaturesEnabled || !supportsImages}
                   />
                   <ChatAudio
                     micOpen={completion.micOpen}
                     setMicOpen={completion.setMicOpen}
                     isRecording={completion.isRecording}
                     setIsRecording={completion.setIsRecording}
-                    disabled={!hasActiveLicense}
+                    disabled={!localFeaturesEnabled}
                   />
                   <ChatScreenshot
                     screenshotConfiguration={completion.screenshotConfiguration}
@@ -285,7 +285,7 @@ const View = () => {
                     isLoading={completion.isLoading}
                     captureScreenshot={completion.captureScreenshot}
                     isScreenshotLoading={completion.isScreenshotLoading}
-                    disabled={!hasActiveLicense || !supportsImages}
+                    disabled={!localFeaturesEnabled || !supportsImages}
                   />
                 </div>
 
@@ -298,7 +298,7 @@ const View = () => {
                   onChange={(e) => completion.setInput(e.target.value)}
                   onKeyDown={completion.handleKeyPress}
                   onPaste={completion.handlePaste}
-                  disabled={completion.isLoading || !hasActiveLicense}
+                  disabled={completion.isLoading || !localFeaturesEnabled}
                 />
                 <Button
                   size="icon"
@@ -308,7 +308,7 @@ const View = () => {
                   disabled={
                     completion.isLoading ||
                     !completion.input.trim() ||
-                    !hasActiveLicense
+                    !localFeaturesEnabled
                   }
                 >
                   {completion.isLoading ? (

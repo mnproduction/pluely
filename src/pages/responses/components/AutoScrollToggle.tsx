@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { getResponseSettings, updateAutoScroll } from "@/lib";
 
 export const AutoScrollToggle = () => {
-  const { hasActiveLicense } = useApp();
+  const { localFeaturesEnabled } = useApp();
   const [autoScroll, setAutoScroll] = useState<boolean>(true);
 
   useEffect(() => {
@@ -13,7 +13,7 @@ export const AutoScrollToggle = () => {
   }, []);
 
   const handleSwitchChange = (checked: boolean) => {
-    if (!hasActiveLicense) {
+    if (!localFeaturesEnabled) {
       return;
     }
     setAutoScroll(checked);
@@ -44,7 +44,7 @@ export const AutoScrollToggle = () => {
         <Switch
           checked={autoScroll}
           onCheckedChange={handleSwitchChange}
-          disabled={!hasActiveLicense}
+          disabled={!localFeaturesEnabled}
           title={`Toggle to ${!autoScroll ? "enable" : "disable"} auto-scroll`}
           aria-label={`Toggle to ${
             autoScroll ? "disable" : "enable"

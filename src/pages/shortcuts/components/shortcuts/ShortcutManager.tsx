@@ -16,7 +16,7 @@ import { useApp } from "@/contexts";
 import { ShortcutRecorder } from "./ShortcutRecorder";
 
 export const ShortcutManager = () => {
-  const { hasActiveLicense } = useApp();
+  const { localFeaturesEnabled } = useApp();
   const [actions, setActions] = useState<ShortcutAction[]>([]);
   const [bindings, setBindings] = useState<Record<string, ShortcutBinding>>({});
   const [editingAction, setEditingAction] = useState<string | null>(null);
@@ -25,11 +25,11 @@ export const ShortcutManager = () => {
 
   useEffect(() => {
     loadShortcuts();
-  }, [hasActiveLicense]);
+  }, [localFeaturesEnabled]);
 
   const loadShortcuts = () => {
     const config = getShortcutsConfig();
-    const allActions = getAllShortcutActions(hasActiveLicense);
+    const allActions = getAllShortcutActions(localFeaturesEnabled);
     setActions(allActions);
     setBindings(config.bindings);
   };
@@ -130,12 +130,12 @@ export const ShortcutManager = () => {
           <p className="text-sm text-muted-foreground">
             {actions.length} shortcut{actions.length !== 1 ? "s" : ""}{" "}
             configured
-            {!hasActiveLicense && " • Get a license to customize shortcuts"}
+            {!localFeaturesEnabled && " • Get a license to customize shortcuts"}
           </p>
         </div>
         <div className="flex gap-2">
           {/* COMMENTED OUT: Custom shortcut creation */}
-          {/* {hasActiveLicense && (
+          {/* {localFeaturesEnabled && (
             <Button
               size="sm"
               variant="default"
@@ -177,7 +177,7 @@ export const ShortcutManager = () => {
       )}
 
       {/* License Prompt for Non-Licensed Users */}
-      {!hasActiveLicense && (
+      {!localFeaturesEnabled && (
         <Card className="p-4 bg-primary/5 border-primary/20">
           <div className="flex items-start gap-3">
             <Lock className="size-4 lg:size-5 text-primary mt-0.5" />
@@ -206,7 +206,7 @@ export const ShortcutManager = () => {
             key: getPlatformDefaultKey(action),
             enabled: true,
           };
-          const isLocked = !hasActiveLicense;
+          const isLocked = !localFeaturesEnabled;
           const isEditing = editingAction === action.id;
 
           return (

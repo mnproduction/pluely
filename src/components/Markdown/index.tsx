@@ -34,10 +34,12 @@ export function Markdown({
 }
 
 const COMPONENTS = {
+  // Remote images can transmit conversation text embedded in their URLs.
+  img: ({ alt }: any) => <span className="text-muted-foreground">{alt ? `[Image: ${alt}]` : "[Image omitted]"}</span>,
   a: ({ children, href, ...props }: any) => {
     const handleClick = async (e: React.MouseEvent) => {
       e.preventDefault();
-      if (href) {
+      if (href && /^https?:\/\//i.test(href)) {
         try {
           await openUrl(href);
         } catch (error) {

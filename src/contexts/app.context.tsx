@@ -4,8 +4,7 @@ import {
   SPEECH_TO_TEXT_PROVIDERS,
   STORAGE_KEYS,
 } from "@/config";
-import { getPlatform, safeLocalStorage, trackAppStart } from "@/lib";
-import { getShortcutsConfig } from "@/lib/storage";
+import { getPlatform, safeLocalStorage } from "@/lib";
 import {
   getCustomizableState,
   setCustomizableState,
@@ -131,7 +130,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [customizable, setCustomizable] = useState<CustomizableState>(
     DEFAULT_CUSTOMIZABLE_STATE
   );
-  const [hasActiveLicense, setHasActiveLicense] = useState<boolean>(false);
+  // All local features in this GPL source are available with your own provider.
+  const localFeaturesEnabled = true;
   const [supportsImages, setSupportsImagesState] = useState<boolean>(() => {
     const stored = safeLocalStorage.getItem(STORAGE_KEYS.SUPPORTS_IMAGES);
     return stored === null ? true : stored === "true";
@@ -143,49 +143,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     safeLocalStorage.setItem(STORAGE_KEYS.SUPPORTS_IMAGES, String(value));
   };
 
-  // Pluely API State
-  const [pluelyApiEnabled, setPluelyApiEnabledState] = useState<boolean>(
-    safeLocalStorage.getItem(STORAGE_KEYS.PLUELY_API_ENABLED) === "true"
-  );
-
-  const getActiveLicenseStatus = async () => {
-    const response: { is_active: boolean; is_dev_license: boolean } =
-      await invoke("validate_license_api");
-    setHasActiveLicense(response.is_active);
-
-    if (response?.is_dev_license) {
-      setPluelyApiEnabled(false);
-    }
-
-    // Check if the auto configs are enabled
-    const autoConfigsEnabled = localStorage.getItem("auto-configs-enabled");
-    if (response.is_active && !autoConfigsEnabled) {
-      setScreenshotConfiguration({
-        mode: "auto",
-        autoPrompt: "Analyze the screenshot and provide insights",
-        enabled: false,
-      });
-      // Set the flag to true so that we don't change the mode again
-      localStorage.setItem("auto-configs-enabled", "true");
-    }
-  };
-
-  useEffect(() => {
-    const syncLicenseState = async () => {
-      try {
-        await invoke("set_license_status", {
-          hasLicense: hasActiveLicense,
-        });
-
-        const config = getShortcutsConfig();
-        await invoke("update_shortcuts", { config });
-      } catch (error) {
-        console.error("Failed to synchronize license state:", error);
-      }
-    };
-
-    syncLicenseState();
-  }, [hasActiveLicense]);
+  const pluelyApiEnabled = false;
 
   // Function to load AI, STT, system prompt and screenshot config data from storage
   const loadData = () => {
@@ -276,14 +234,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       }
     }
 
-    // Load Pluely API enabled state
-    const savedPluelyApiEnabled = safeLocalStorage.getItem(
-      STORAGE_KEYS.PLUELY_API_ENABLED
-    );
-    if (savedPluelyApiEnabled !== null) {
-      setPluelyApiEnabledState(savedPluelyApiEnabled === "true");
-    }
-
     // Load selected audio devices
     const savedAudioDevices = safeLocalStorage.getItem(
       STORAGE_KEYS.SELECTED_AUDIO_DEVICES
@@ -328,24 +278,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   // Load data on mount
   useEffect(() => {
-    const initializeApp = async () => {
-      // Load license and data
-      await getActiveLicenseStatus();
-
-      // Track app start
-      try {
-        const appVersion = await invoke<string>("get_app_version");
-        const storage = await invoke<{
-          instance_id: string;
-        }>("secure_storage_get");
-        await trackAppStart(appVersion, storage.instance_id || "");
-      } catch (error) {
-        console.debug("Failed to track app start:", error);
-      }
-    };
-    // Load data
     loadData();
-    initializeApp();
   }, []);
 
   // Handle customizable settings on state changes
@@ -377,7 +310,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
         // Only apply autostart on the very first launch
         if (!autostartInitialized) {
-          const autostartEnabled = customizable?.autostart?.isEnabled ?? true;
+          const autostartEnabled = customizable?.autostart?.isEnabled ?? false;
 
           if (autostartEnabled) {
             await enable();
@@ -453,25 +386,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   // Check if the current AI provider/model supports images
   useEffect(() => {
     const checkImageSupport = async () => {
-      if (pluelyApiEnabled) {
-        // For Pluely API, check the selected model's modality
-        try {
-          const storage = await invoke<{
-            selected_pluely_model?: string;
-          }>("secure_storage_get");
-
-          if (storage.selected_pluely_model) {
-            const model = JSON.parse(storage.selected_pluely_model);
-            const hasImageSupport = model.modality?.includes("image") ?? false;
-            setSupportsImages(hasImageSupport);
-          } else {
-            // No model selected, assume no image support
-            setSupportsImages(false);
-          }
-        } catch (error) {
-          setSupportsImages(false);
-        }
-      } else {
         // For custom AI providers, check if curl contains {{IMAGE}}
         const provider = allAiProviders.find(
           (p) => p.id === selectedAIProvider.provider
@@ -482,7 +396,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         } else {
           setSupportsImages(true);
         }
-      }
     };
 
     checkImageSupport();
@@ -614,44 +527,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     loadData();
   };
 
-  const setPluelyApiEnabled = async (enabled: boolean) => {
-    setPluelyApiEnabledState(enabled);
-    safeLocalStorage.setItem(STORAGE_KEYS.PLUELY_API_ENABLED, String(enabled));
-
-    if (enabled) {
-      try {
-        const storage = await invoke<{
-          selected_pluely_model?: string;
-        }>("secure_storage_get");
-
-        if (storage.selected_pluely_model) {
-          const model = JSON.parse(storage.selected_pluely_model);
-          const hasImageSupport = model.modality?.includes("image") ?? false;
-          setSupportsImages(hasImageSupport);
-        } else {
-          // No model selected, assume no image support
-          setSupportsImages(false);
-        }
-      } catch (error) {
-        console.debug("Failed to check Pluely model image support:", error);
-        setSupportsImages(false);
-      }
-    } else {
-      // Switching to regular provider - check if curl contains {{IMAGE}}
-      const provider = allAiProviders.find(
-        (p) => p.id === selectedAIProvider.provider
-      );
-      if (provider) {
-        const hasImageSupport = provider.curl?.includes("{{IMAGE}}") ?? false;
-        setSupportsImages(hasImageSupport);
-      } else {
-        setSupportsImages(true);
-      }
-    }
-
-    loadData();
-  };
-
   // Create the context value (extend IContextType accordingly)
   const value: IContextType = {
     systemPrompt,
@@ -672,10 +547,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     toggleAutostart,
     loadData,
     pluelyApiEnabled,
-    setPluelyApiEnabled,
-    hasActiveLicense,
-    setHasActiveLicense,
-    getActiveLicenseStatus,
+    localFeaturesEnabled,
     selectedAudioDevices,
     setSelectedAudioDevices,
     setCursorType,

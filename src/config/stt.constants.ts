@@ -1,5 +1,12 @@
 export const SPEECH_TO_TEXT_PROVIDERS = [
   {
+    id: "xai-stt",
+    name: "xAI Speech to Text",
+    curl: `curl -X POST "https://api.x.ai/v1/stt" -H "Authorization: Bearer {{API_KEY}}" -F "file={{AUDIO}}"`,
+    responseContentPath: "text",
+    streaming: false,
+  },
+  {
     id: "openai-whisper",
     name: "OpenAI Whisper",
     curl: `curl -X POST "https://api.openai.com/v1/audio/transcriptions" \\

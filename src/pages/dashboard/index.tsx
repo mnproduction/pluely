@@ -1,68 +1,14 @@
-import { useCallback, useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { GetLicense } from "@/components";
-import { PluelyApiSetup, Usage } from "./components";
+import { Link } from "react-router-dom";
 import { PageLayout } from "@/layouts";
-import { useApp } from "@/contexts";
 
-const Dashboard = () => {
-  const { hasActiveLicense } = useApp();
-  const [activity, setActivity] = useState<any>(null);
-  const [loadingActivity, setLoadingActivity] = useState(false);
-
-  const fetchActivity = useCallback(async () => {
-    if (!hasActiveLicense) {
-      setActivity({ data: [], total_tokens_used: 0 });
-      return;
-    }
-    setLoadingActivity(true);
-    try {
-      const response = await invoke("get_activity");
-      const responseData: any = response;
-      if (responseData && responseData.success) {
-        setActivity(responseData);
-      } else {
-        setActivity({ data: [], total_tokens_used: 0 });
-      }
-    } catch (error) {
-      setActivity({ data: [], total_tokens_used: 0 });
-    } finally {
-      setLoadingActivity(false);
-    }
-  }, [hasActiveLicense]);
-
-  useEffect(() => {
-    if (hasActiveLicense) {
-      fetchActivity();
-    } else {
-      setActivity(null);
-    }
-  }, [fetchActivity, hasActiveLicense]);
-
-  const activityData =
-    activity && Array.isArray(activity.data) ? activity.data : [];
-  const totalTokens =
-    activity && typeof activity.total_tokens_used === "number"
-      ? activity.total_tokens_used
-      : 0;
-
-  return (
-    <PageLayout
-      title="Dashboard"
-      description="Pluely license to unlock faster responses, quicker support and premium features."
-      rightSlot={!hasActiveLicense ? <GetLicense /> : null}
-    >
-      {/* Pluely API Setup */}
-      <PluelyApiSetup />
-
-      <Usage
-        loading={loadingActivity}
-        onRefresh={fetchActivity}
-        data={activityData}
-        totalTokens={totalTokens}
-      />
-    </PageLayout>
-  );
-};
-
-export default Dashboard;
+export default function Dashboard() {
+  return <PageLayout title="Pluely Local" description="Your providers. All local features enabled.">
+    <div className="space-y-4 text-sm">
+      <p>Open Dev Space, select Grok (xAI), and enter your API key and a model available to your xAI account. Select xAI Speech to Text for audio and enter the same key there.</p>
+      <Link className="underline" to="/dev-space">Configure AI and speech providers</Link>
+      <p>Provider settings are encrypted with Windows DPAPI. Requests go directly to the provider you choose. Chat history, transcripts, and screenshots are stored locally without application encryption. You can delete history in App Settings.</p>
+      <p>Microphone, system audio, and screenshots are sent when you use their controls. Autostart is off by default.</p>
+      <p className="text-muted-foreground">Based on the GPL Pluely 0.1.9 source. Local themes, shortcuts, screenshot modes, chat follow-ups, and prompt generation are available with your own provider.</p>
+    </div>
+  </PageLayout>;
+}

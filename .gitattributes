@@ -1,0 +1,3 @@
+* text=auto eol=lf
+# SQL is embedded verbatim; stable line endings preserve migration checksums.
+*.sql text eol=lf

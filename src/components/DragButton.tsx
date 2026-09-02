@@ -11,17 +11,17 @@ import {
 import { useWindowResize } from "@/hooks";
 
 export const DragButton = () => {
-  const { hasActiveLicense } = useApp();
+  const { localFeaturesEnabled } = useApp();
   const [isOpen, setIsOpen] = useState(false);
   const { resizeWindow } = useWindowResize();
 
   useEffect(() => {
-    if (!hasActiveLicense) {
+    if (!localFeaturesEnabled) {
       resizeWindow(isOpen);
     }
-  }, [hasActiveLicense, isOpen, resizeWindow]);
+  }, [localFeaturesEnabled, isOpen, resizeWindow]);
 
-  if (!hasActiveLicense) {
+  if (!localFeaturesEnabled) {
     return (
       <Popover open={isOpen} onOpenChange={setIsOpen}>
         <PopoverTrigger asChild className="border-none hover:bg-transparent">
@@ -58,7 +58,7 @@ export const DragButton = () => {
       variant="ghost"
       size="icon"
       className={`-ml-[2px] w-fit`}
-      data-tauri-drag-region={hasActiveLicense}
+      data-tauri-drag-region={localFeaturesEnabled}
     >
       <GripVerticalIcon className="h-4 w-4" />
     </Button>

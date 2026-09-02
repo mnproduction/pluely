@@ -1,10 +1,11 @@
+import { safeLocalStorage } from "./helper";
 import { STORAGE_KEYS } from "@/config";
 import { TYPE_PROVIDER } from "@/types";
 
 export function getCustomSttProviders(): TYPE_PROVIDER[] {
   try {
     if (typeof window === "undefined") return [];
-    const saved = localStorage.getItem(STORAGE_KEYS.CUSTOM_SPEECH_PROVIDERS);
+    const saved = safeLocalStorage.getItem(STORAGE_KEYS.CUSTOM_SPEECH_PROVIDERS);
     if (!saved) return [];
     const parsed = JSON.parse(saved);
     if (!Array.isArray(parsed)) return [];
@@ -18,7 +19,7 @@ export function getCustomSttProviders(): TYPE_PROVIDER[] {
 export function setCustomSttProviders(providers: TYPE_PROVIDER[]): void {
   try {
     if (typeof window === "undefined") return;
-    localStorage.setItem(
+    safeLocalStorage.setItem(
       STORAGE_KEYS.CUSTOM_SPEECH_PROVIDERS,
       JSON.stringify(providers)
     );

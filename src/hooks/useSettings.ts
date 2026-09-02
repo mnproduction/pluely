@@ -17,7 +17,7 @@ export const useSettings = () => {
     selectedSttProvider,
     onSetSelectedAIProvider,
     onSetSelectedSttProvider,
-    hasActiveLicense,
+    localFeaturesEnabled,
   } = useApp();
   const [variables, setVariables] = useState<{ key: string; value: string }[]>(
     []
@@ -50,7 +50,7 @@ export const useSettings = () => {
   };
 
   const handleScreenshotEnabledChange = (enabled: boolean) => {
-    if (!enabled && !hasActiveLicense) {
+    if (!enabled && !localFeaturesEnabled) {
       return;
     }
     const newConfig = { ...screenshotConfiguration, enabled };
@@ -111,6 +111,6 @@ export const useSettings = () => {
     setShowDeleteConfirmDialog,
     variables,
     sttVariables,
-    hasActiveLicense,
+    localFeaturesEnabled,
   };
 };

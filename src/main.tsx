@@ -5,6 +5,8 @@ import { AppProvider, ThemeProvider } from "./contexts";
 import "./global.css";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import AppRoutes from "./routes";
+import { initializePrivateStorage } from "./lib/storage/private-storage";
+import { StorageStatus } from "./components/StorageStatus";
 
 const currentWindow = getCurrentWindow();
 const windowLabel = currentWindow.label;
@@ -19,13 +21,19 @@ if (windowLabel.startsWith("capture-overlay-")) {
     </React.StrictMode>
   );
 } else {
-  ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+  initializePrivateStorage().then(() => {
+    ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
       <ThemeProvider>
         <AppProvider>
+          <StorageStatus />
           <AppRoutes />
         </AppProvider>
       </ThemeProvider>
     </React.StrictMode>
   );
+  }).catch(() => {
+    const root = document.getElementById("root");
+    if (root) root.textContent = "Cannot open encrypted provider settings. Restart with the Windows account that saved them. No settings have been overwritten.";
+  });
 }
