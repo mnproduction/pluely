@@ -173,14 +173,34 @@ pub struct PipelineInfo {
     panel_open: bool,
     capture_enabled: bool,
     capture_active: bool,
+    system_capture_active: bool,
+    microphone_capture_active: bool,
+    microphone_speaking: bool,
+    microphone_rms: f64,
+    microphone_peak: f64,
+    paused: bool,
     recording: bool,
     transcribing: bool,
     generating: bool,
+    response_queued: bool,
     stt_configured: bool,
     ai_configured: bool,
     transcript_chars: u64,
+    transcript_turns: u64,
+    system_turns: u64,
+    microphone_turns: u64,
     response_chars: u64,
     has_error: bool,
+    auto_response_mode: AutoResponseMode,
+}
+
+#[derive(Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum AutoResponseMode {
+    #[default]
+    Questions,
+    Pause,
+    Off,
 }
 
 #[derive(Clone, Serialize)]
@@ -230,7 +250,7 @@ struct Snapshot {
 impl Default for Snapshot {
     fn default() -> Self {
         Self {
-            schema: 1,
+            schema: 2,
             version: env!("CARGO_PKG_VERSION"),
             pid: std::process::id(),
             at_ms: now_ms(),
@@ -700,6 +720,11 @@ mod tests {
             serde_json::json!({"response":"private text"})
         )
         .is_err());
+        let pipeline = serde_json::to_value(PipelineInfo::default()).unwrap();
+        assert!(pipeline.get("microphone_capture_active").is_some());
+        assert!(pipeline.get("system_turns").is_some());
+        assert!(pipeline.get("transcript_text").is_none());
+        assert_eq!(diag.snapshot.lock().unwrap().schema, 2);
         for index in 0..500 {
             diag.record_pipeline(PipelineInfo {
                 panel_open: index % 2 == 0,

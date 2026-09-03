@@ -16,6 +16,8 @@ Requests go directly to your selected provider. You pay that provider for API us
 
 ## Local features
 
+Version 0.2.0 introduces the Hybrid Listen workspace. It captures the selected microphone and system output as independent VAD streams, sends each speech segment to STT separately, and merges completed transcripts into one ordered timeline labeled **You** and **Them**. Separate live meters show the actual signal on each channel. Question mode generates a suggestion only when **Them** asks a likely English or Ukrainian question; every-pause and manual-only modes are also available. New requests queue behind an active answer, while Pause, Resume, and Stop preserve the session and let in-flight STT or AI work finish. The expanded diagnostic schema reports per-channel activity, signal levels, segment counts, queue state, and automatic-response mode without exposing audio, transcript text, response text, provider configuration, or keys.
+
 Version 0.1.18 keeps the System Audio panel mounted when capture stops and a completed transcript or answer remains. This complements the state-preservation fix in 0.1.17 so the retained result is actually visible until the user closes the panel or starts a new conversation.
 
 Version 0.1.17 keeps completed System Audio transcripts and LLM answers visible after capture is stopped. The diagnostic gateway also retains the last 100 changes to panel/pipeline state, so a later snapshot can explain when a result was shown or cleared.
@@ -42,7 +44,7 @@ Version 0.1.11 makes **Hide Icon from Dock/Taskbar** apply to both AI Assistant 
 
 Version 0.1.10 fixes switching from Auto-detect to Manual recording, duplicate starts, and restarting after Discard or Stop & Send. On Windows, idle loopback audio no longer leaves capture stuck, and unavailable output devices produce an initialization error.
 
-The headphones panel records **system output audio** (for example, a call or a video). In Manual mode, click Start Recording, then Stop & Send. Discard stops recording without transcription. Microphone recording is a separate control.
+The headphones button opens **Listen** for a call or video. Listen captures both the selected system output and microphone, keeps the channels separate through transcription, and combines their labeled text only when preparing context for the assistant.
 
 The open-source implementation's themes, transparency, window movement, custom shortcuts, screenshot modes, chat follow-ups and attachments, response length/language, auto-scroll, saved prompts, and audio features are enabled. Generate with AI uses your configured provider.
 

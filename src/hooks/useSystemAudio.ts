@@ -18,6 +18,15 @@ import {
   generateMessageId,
 } from "@/lib";
 import { Message } from "@/types/completion";
+import {
+  formatTranscriptContext,
+  mergeTranscriptTurn,
+  shouldAutoRespond,
+  speakerForSource,
+  type AutoResponseMode,
+  type ListenSource,
+  type ListenTranscriptTurn,
+} from "@/lib/listen-session";
 
 // VAD Configuration interface matching Rust
 export interface VadConfig {
@@ -94,8 +103,39 @@ export function useSystemAudio() {
   const [isRecordingInContinuousMode, setIsRecordingInContinuousMode] =
     useState<boolean>(false);
   const [isAudioTransitioning, setIsAudioTransitioning] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [microphoneActive, setMicrophoneActive] = useState(false);
+  const [microphoneSpeaking, setMicrophoneSpeaking] = useState(false);
+  const [microphoneLoading, setMicrophoneLoading] = useState(false);
+  const [microphoneLevel, setMicrophoneLevel] = useState<SystemAudioLevel | null>(null);
+  const [microphoneError, setMicrophoneError] = useState("");
+  const [transcriptTurns, setTranscriptTurns] = useState<ListenTranscriptTurn[]>([]);
+  const [sessionStartedAt, setSessionStartedAt] = useState<number | null>(null);
+  const [autoResponseMode, setAutoResponseModeState] = useState<AutoResponseMode>("questions");
+  const [responseQueued, setResponseQueued] = useState(false);
   const audioTransitionRef = useRef(false);
   const recordingRef = useRef(false);
+  const sessionActiveRef = useRef(false);
+  const pausedRef = useRef(false);
+  const pendingSttRef = useRef(0);
+  const microphoneLevelRef = useRef<SystemAudioLevel | null>(null);
+  const sessionGenerationRef = useRef(0);
+  const turnSequenceRef = useRef(0);
+  const transcriptTurnsRef = useRef<ListenTranscriptTurn[]>([]);
+  const generationActiveRef = useRef(false);
+  const queuedGenerationRef = useRef<{
+    text: string;
+    prompt: string;
+    previousMessages: Message[];
+    source: ListenSource;
+  } | null>(null);
+  const processWithAIRef = useRef<((
+    text: string,
+    prompt: string,
+    previousMessages: Message[],
+    source?: ListenSource
+  ) => Promise<void>) | null>(null);
+  const transcribeAudioRef = useRef<((source: ListenSource, audio: Blob, capturedAt: number) => Promise<void>) | null>(null);
 
   // Refs also guard two clicks/keypresses before React has rendered again.
   const beginAudioTransition = useCallback(() => {
@@ -137,18 +177,28 @@ export function useSystemAudio() {
   // Report state/counts only. Neither prompts, responses nor provider values leave this window.
   useEffect(() => {
     const report = () => {
+      const systemTurns = transcriptTurns.filter((turn) => turn.source === "system").length;
+      const microphoneTurns = transcriptTurns.length - systemTurns;
       void invoke("diagnostics_record_pipeline", { update: {
         panel_open: isPopoverOpen, capture_enabled: capturing, capture_active: captureActive,
+        system_capture_active: captureActive, microphone_capture_active: microphoneActive,
+        microphone_speaking: microphoneSpeaking, microphone_rms: microphoneLevelRef.current?.rms ?? 0,
+        microphone_peak: microphoneLevelRef.current?.peak ?? 0, paused: isPaused,
         recording: isRecordingInContinuousMode, transcribing: isProcessing, generating: isAIProcessing,
+        response_queued: responseQueued,
         stt_configured: Boolean(selectedSttProvider.provider), ai_configured: Boolean(selectedAIProvider.provider),
-        transcript_chars: lastTranscription.length, response_chars: lastAIResponse.length, has_error: Boolean(error),
+        transcript_chars: transcriptTurns.reduce((total, turn) => total + turn.text.length, 0),
+        transcript_turns: transcriptTurns.length, system_turns: systemTurns, microphone_turns: microphoneTurns,
+        response_chars: lastAIResponse.length, has_error: Boolean(error || microphoneError), auto_response_mode: autoResponseMode,
       } }).catch(() => {});
     };
     const timer = setTimeout(report, 200);
     const heartbeat = setInterval(report, 2000);
     return () => { clearTimeout(timer); clearInterval(heartbeat); };
-  }, [isPopoverOpen, capturing, captureActive, isRecordingInContinuousMode, isProcessing, isAIProcessing,
-    selectedSttProvider.provider, selectedAIProvider.provider, lastTranscription.length, lastAIResponse.length, error]);
+  }, [isPopoverOpen, capturing, captureActive, microphoneActive, microphoneSpeaking,
+    isPaused, isRecordingInContinuousMode, isProcessing, isAIProcessing, responseQueued,
+    selectedSttProvider.provider, selectedAIProvider.provider, transcriptTurns, lastAIResponse.length, error, microphoneError,
+    autoResponseMode]);
 
   // Load context settings and VAD config from localStorage on mount
   useEffect(() => {
@@ -174,6 +224,11 @@ export function useSystemAudio() {
       } catch (error) {
         console.error("Failed to load VAD config:", error);
       }
+    }
+
+    const savedAutoMode = safeLocalStorage.getItem("listen_auto_response_mode");
+    if (savedAutoMode === "questions" || savedAutoMode === "pause" || savedAutoMode === "off") {
+      setAutoResponseModeState(savedAutoMode);
     }
   }, []);
 
@@ -250,8 +305,7 @@ export function useSystemAudio() {
           const errorMsg = event.payload as string;
           console.error("Audio encoding error:", errorMsg);
           setError(`Failed to process audio: ${errorMsg}`);
-          setIsProcessing(false);
-          setIsAIProcessing(false);
+          setIsProcessing(pendingSttRef.current > 0);
           setIsRecordingInContinuousMode(false);
         });
 
@@ -281,71 +335,30 @@ export function useSystemAudio() {
     };
   }, []);
 
-  // Handle single speech detection event (both VAD and continuous modes)
+  // Native system audio is transcribed through the same session pipeline as the microphone.
   useEffect(() => {
     let speechUnlisten: (() => void) | undefined;
     let disposed = false;
 
     const setupEventListener = async () => {
       try {
-        speechUnlisten = await listen("speech-detected", async (event) => {
+        speechUnlisten = await listen("speech-detected", (event) => {
           try {
-            if (disposed || !capturing) return;
+            if (disposed || !sessionActiveRef.current || pausedRef.current) return;
 
             const base64Audio = event.payload as string;
-            // Convert to blob
             const binaryString = atob(base64Audio);
             const bytes = new Uint8Array(binaryString.length);
             for (let i = 0; i < binaryString.length; i++) {
               bytes[i] = binaryString.charCodeAt(i);
             }
-            const audioBlob = new Blob([bytes], { type: "audio/wav" });
-
-            const providerConfig = allSttProviders.find(
-              (p) => p.id === selectedSttProvider.provider
+            void transcribeAudioRef.current?.(
+              "system",
+              new Blob([bytes], { type: "audio/wav" }),
+              Date.now()
             );
-
-            setIsProcessing(true);
-
-            try {
-              const transcription = await fetchSTT({
-                provider: providerConfig,
-                selectedProvider: selectedSttProvider,
-                audio: audioBlob,
-                source: "system",
-              });
-
-              if (transcription.trim()) {
-                setLastTranscription(transcription);
-                setIsProcessing(false);
-                setError("");
-
-                const effectiveSystemPrompt = useSystemPrompt
-                  ? systemPrompt || DEFAULT_SYSTEM_PROMPT
-                  : contextContent || DEFAULT_SYSTEM_PROMPT;
-
-                const previousMessages = conversation.messages.map((msg) => {
-                  return { role: msg.role, content: msg.content };
-                });
-
-                await processWithAI(
-                  transcription,
-                  effectiveSystemPrompt,
-                  previousMessages
-                );
-              } else {
-                setError("No speech was recognized. Check the System Audio level and the meeting's speaker device, or try Manual mode.");
-                setIsPopoverOpen(true);
-              }
-            } catch (sttError: any) {
-              console.error("STT Error:", sttError);
-              setError(sttError.message || "Failed to transcribe audio");
-              setIsPopoverOpen(true);
-            }
           } catch (err) {
             setError("Failed to process speech");
-          } finally {
-            setIsProcessing(false);
           }
         });
         if (disposed) speechUnlisten();
@@ -360,17 +373,7 @@ export function useSystemAudio() {
       disposed = true;
       if (speechUnlisten) speechUnlisten();
     };
-  }, [
-    capturing,
-    selectedSttProvider,
-    allSttProviders,
-    selectedAIProvider,
-    allAiProviders,
-    useSystemPrompt,
-    systemPrompt,
-    contextContent,
-    conversation.messages.length,
-  ]);
+  }, []);
 
   // Context management functions
   const saveContextSettings = useCallback(
@@ -534,12 +537,16 @@ export function useSystemAudio() {
     async (
       transcription: string,
       prompt: string,
-      previousMessages: Message[]
+      previousMessages: Message[],
+      source: ListenSource = "system"
     ) => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
+      if (generationActiveRef.current) {
+        queuedGenerationRef.current = { text: transcription, prompt, previousMessages, source };
+        setResponseQueued(true);
+        return;
       }
 
+      generationActiveRef.current = true;
       const requestController = new AbortController();
       abortControllerRef.current = requestController;
 
@@ -562,7 +569,7 @@ export function useSystemAudio() {
           userMessage: transcription,
           imagesBase64: [],
           signal: requestController.signal,
-          source: "system",
+          source,
         })) {
           if (requestController.signal.aborted) return;
           fullResponse += chunk;
@@ -600,12 +607,150 @@ export function useSystemAudio() {
           setIsPopoverOpen(true);
         }
       } finally {
-        if (abortControllerRef.current === requestController) setIsAIProcessing(false);
-        // No auto-restart - user manually controls when to start next recording
+        if (abortControllerRef.current === requestController) {
+          abortControllerRef.current = null;
+          generationActiveRef.current = false;
+          setIsAIProcessing(false);
+          const queued = queuedGenerationRef.current;
+          queuedGenerationRef.current = null;
+          setResponseQueued(false);
+          if (queued && !requestController.signal.aborted) {
+            setTimeout(() => {
+              void processWithAIRef.current?.(
+                queued.text,
+                queued.prompt,
+                queued.previousMessages,
+                queued.source
+              );
+            }, 0);
+          }
+        }
       }
     },
-    [selectedAIProvider, allAiProviders, conversation.messages]
+    [selectedAIProvider, allAiProviders]
   );
+
+  processWithAIRef.current = processWithAI;
+
+  const transcribeAudio = useCallback(async (
+    source: ListenSource,
+    audio: Blob,
+    capturedAt: number
+  ) => {
+    const sessionGeneration = sessionGenerationRef.current;
+    const providerConfig = allSttProviders.find(
+      (provider) => provider.id === selectedSttProvider.provider
+    );
+    pendingSttRef.current += 1;
+    setIsProcessing(true);
+
+    try {
+      const transcription = await fetchSTT({
+        provider: providerConfig,
+        selectedProvider: selectedSttProvider,
+        audio,
+        source,
+      });
+      if (sessionGeneration !== sessionGenerationRef.current) return;
+      const text = transcription.trim();
+      if (!text) {
+        if (source === "system") {
+          setError("No speech was recognized. Check the System Audio level and the meeting speaker device.");
+          setIsPopoverOpen(true);
+        }
+        return;
+      }
+
+      const turn: ListenTranscriptTurn = {
+        id: crypto.randomUUID(),
+        source,
+        speaker: speakerForSource(source),
+        text,
+        capturedAt,
+        completedAt: Date.now(),
+        sequence: ++turnSequenceRef.current,
+      };
+      const nextTurns = mergeTranscriptTurn(transcriptTurnsRef.current, turn);
+      transcriptTurnsRef.current = nextTurns;
+      setTranscriptTurns(nextTurns);
+      setLastTranscription(text);
+      setError("");
+
+      if (shouldAutoRespond(autoResponseMode, source, text)) {
+        const effectiveSystemPrompt = useSystemPrompt
+          ? systemPrompt || DEFAULT_SYSTEM_PROMPT
+          : contextContent || DEFAULT_SYSTEM_PROMPT;
+        const context = formatTranscriptContext(nextTurns);
+        const request = `Live conversation transcript:\n${context}\n\nSuggest the best concise response for You to say next.`;
+        const previousMessages = conversation.messages.map(({ role, content }) => ({ role, content }));
+        void processWithAI(request, effectiveSystemPrompt, previousMessages, source);
+      }
+    } catch (sttError) {
+      if (sessionGeneration !== sessionGenerationRef.current) return;
+      console.error("STT Error:", sttError);
+      setError(sttError instanceof Error ? sttError.message : "Failed to transcribe audio");
+      setIsPopoverOpen(true);
+    } finally {
+      if (sessionGeneration === sessionGenerationRef.current) {
+        pendingSttRef.current = Math.max(0, pendingSttRef.current - 1);
+        setIsProcessing(pendingSttRef.current > 0);
+      }
+    }
+  }, [
+    allSttProviders,
+    selectedSttProvider,
+    autoResponseMode,
+    useSystemPrompt,
+    systemPrompt,
+    contextContent,
+    conversation.messages,
+    processWithAI,
+  ]);
+
+  transcribeAudioRef.current = transcribeAudio;
+
+  const handleMicrophoneAudio = useCallback((audio: Blob, capturedAt: number) => {
+    if (!sessionActiveRef.current || pausedRef.current) return;
+    void transcribeAudioRef.current?.("microphone", audio, capturedAt);
+  }, []);
+
+  const updateMicrophoneLevel = useCallback((level: SystemAudioLevel | null) => {
+    microphoneLevelRef.current = level;
+    setMicrophoneLevel(level);
+  }, []);
+
+  const updateMicrophoneStatus = useCallback((status: {
+    active: boolean;
+    speaking: boolean;
+    loading: boolean;
+    error: string;
+  }) => {
+    setMicrophoneActive(status.active);
+    setMicrophoneSpeaking(status.speaking);
+    setMicrophoneLoading(status.loading);
+    setMicrophoneError(status.error);
+  }, []);
+
+  const setAutoResponseMode = useCallback((mode: AutoResponseMode) => {
+    setAutoResponseModeState(mode);
+    safeLocalStorage.setItem("listen_auto_response_mode", mode);
+  }, []);
+
+  const suggestResponse = useCallback(async (instruction = "Suggest the best concise response for You to say next.") => {
+    const context = formatTranscriptContext(transcriptTurnsRef.current);
+    if (!context) {
+      setError("No transcript is available yet.");
+      setIsPopoverOpen(true);
+      return;
+    }
+    const effectiveSystemPrompt = useSystemPrompt
+      ? systemPrompt || DEFAULT_SYSTEM_PROMPT
+      : contextContent || DEFAULT_SYSTEM_PROMPT;
+    const request = `Live conversation transcript:\n${context}\n\n${instruction}`;
+    const previousMessages = conversation.messages.map(({ role, content }) => ({ role, content }));
+    const source = transcriptTurnsRef.current[transcriptTurnsRef.current.length - 1]?.source ?? "system";
+    await processWithAI(request, effectiveSystemPrompt, previousMessages, source);
+  }, [useSystemPrompt, systemPrompt, contextContent, conversation.messages, processWithAI]);
 
   const startCapture = useCallback(async () => {
     if (!beginAudioTransition()) return;
@@ -619,10 +764,19 @@ export function useSystemAudio() {
         return;
       }
 
-      const isContinuous = !vadConfig.enabled;
-      // Release any previous session before entering either mode.
+      const liveVadConfig = vadConfig.enabled ? vadConfig : { ...vadConfig, enabled: true };
+      if (!vadConfig.enabled) {
+        setVadConfig(liveVadConfig);
+        safeLocalStorage.setItem("vad_config", JSON.stringify(liveVadConfig));
+      }
+      // Release any previous native session before starting both Listen channels.
       await invoke("stop_system_audio_capture");
       recordingRef.current = false;
+
+      if (abortControllerRef.current) abortControllerRef.current.abort();
+      queuedGenerationRef.current = null;
+      generationActiveRef.current = false;
+      setResponseQueued(false);
 
       // Set up conversation
       const conversationId = generateConversationId("sysaudio");
@@ -634,16 +788,25 @@ export function useSystemAudio() {
         updatedAt: 0,
       });
 
+      transcriptTurnsRef.current = [];
+      sessionGenerationRef.current += 1;
+      turnSequenceRef.current = 0;
+      pendingSttRef.current = 0;
+      setTranscriptTurns([]);
+      setLastTranscription("");
+      setLastAIResponse("");
+      setMicrophoneError("");
+      microphoneLevelRef.current = null;
+      setMicrophoneLevel(null);
+      setIsPaused(false);
+      pausedRef.current = false;
+      sessionActiveRef.current = true;
+      setSessionStartedAt(Date.now());
       setCapturing(true);
       setIsPopoverOpen(true);
-      setIsContinuousMode(isContinuous);
+      setIsContinuousMode(false);
       setRecordingProgress(0);
-
-      // If continuous mode
-      if (isContinuous) {
-        setIsRecordingInContinuousMode(false);
-        return;
-      }
+      setIsRecordingInContinuousMode(false);
 
       // VAD mode: Start recording immediately
       const deviceId =
@@ -654,10 +817,11 @@ export function useSystemAudio() {
       // Start capture with VAD config
       setCaptureDeviceName(selectedAudioDevices.output.name || "System default output");
       await invoke<string>("start_system_audio_capture", {
-        vadConfig: vadConfig,
+        vadConfig: liveVadConfig,
         deviceId: deviceId,
       });
     } catch (err) {
+      sessionActiveRef.current = false;
       setCapturing(false);
       setIsContinuousMode(false);
       const errorMessage = err instanceof Error ? err.message : String(err);
@@ -671,25 +835,24 @@ export function useSystemAudio() {
   const stopCapture = useCallback(async () => {
     if (!beginAudioTransition()) return;
     try {
-      // Abort any ongoing AI requests
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-        abortControllerRef.current = null;
-      }
-
       // Stop the audio capture
       await invoke<string>("stop_system_audio_capture");
 
       // Stop capture without deleting the completed transcript or answer.
-      // Results are cleared only by a new conversation or a replacement response.
+      // Pending transcription and generation may finish after capture stops.
+      sessionActiveRef.current = false;
+      pausedRef.current = false;
       setCapturing(false);
+      setIsPaused(false);
+      setMicrophoneActive(false);
+      setMicrophoneSpeaking(false);
+      microphoneLevelRef.current = null;
+      setMicrophoneLevel(null);
       recordingRef.current = false;
-      setIsProcessing(false);
-      setIsAIProcessing(false);
       setIsContinuousMode(false);
       setIsRecordingInContinuousMode(false);
       setRecordingProgress(0);
-      setIsPopoverOpen(Boolean(lastTranscription || lastAIResponse || error));
+      setIsPopoverOpen(Boolean(transcriptTurnsRef.current.length || lastAIResponse || error || pendingSttRef.current || generationActiveRef.current));
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       setError(`Failed to stop capture: ${errorMessage}`);
@@ -697,7 +860,45 @@ export function useSystemAudio() {
     } finally {
       endAudioTransition();
     }
-  }, [beginAudioTransition, endAudioTransition, lastTranscription, lastAIResponse, error]);
+  }, [beginAudioTransition, endAudioTransition, lastAIResponse, error]);
+
+  const pauseCapture = useCallback(async () => {
+    if (!capturing || isPaused || !beginAudioTransition()) return;
+    try {
+      pausedRef.current = true;
+      setIsPaused(true);
+      microphoneLevelRef.current = null;
+      setMicrophoneLevel(null);
+      await invoke<string>("stop_system_audio_capture");
+    } catch (err) {
+      pausedRef.current = false;
+      setIsPaused(false);
+      setError(`Failed to pause Listen: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      endAudioTransition();
+    }
+  }, [capturing, isPaused, beginAudioTransition, endAudioTransition]);
+
+  const resumeCapture = useCallback(async () => {
+    if (!capturing || !isPaused || !beginAudioTransition()) return;
+    try {
+      const deviceId = selectedAudioDevices.output.id !== "default"
+        ? selectedAudioDevices.output.id
+        : null;
+      setCaptureDeviceName(selectedAudioDevices.output.name || "System default output");
+      await invoke<string>("start_system_audio_capture", {
+        vadConfig: { ...vadConfig, enabled: true },
+        deviceId,
+      });
+      pausedRef.current = false;
+      setIsPaused(false);
+      setError("");
+    } catch (err) {
+      setError(`Failed to resume Listen: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      endAudioTransition();
+    }
+  }, [capturing, isPaused, selectedAudioDevices.output.id, selectedAudioDevices.output.name, vadConfig, beginAudioTransition, endAudioTransition]);
 
   // Manual stop for continuous recording
   const manualStopAndSend = useCallback(async () => {
@@ -747,15 +948,19 @@ export function useSystemAudio() {
     const shouldOpenPopover =
       capturing ||
       setupRequired ||
+      isProcessing ||
       isAIProcessing ||
+      transcriptTurns.length > 0 ||
       !!lastAIResponse ||
       !!error;
     setIsPopoverOpen(shouldOpenPopover);
-    resizeWindow(shouldOpenPopover);
+    resizeWindow(shouldOpenPopover, "listen");
   }, [
     capturing,
     setupRequired,
+    isProcessing,
     isAIProcessing,
+    transcriptTurns.length,
     lastAIResponse,
     error,
     resizeWindow,
@@ -776,6 +981,9 @@ export function useSystemAudio() {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
+      queuedGenerationRef.current = null;
+      sessionActiveRef.current = false;
+      sessionGenerationRef.current += 1;
       invoke("stop_system_audio_capture").catch(() => {});
     };
   }, []);
@@ -827,6 +1035,10 @@ export function useSystemAudio() {
   ]);
 
   const startNewConversation = useCallback(() => {
+    if (abortControllerRef.current) abortControllerRef.current.abort();
+    queuedGenerationRef.current = null;
+    generationActiveRef.current = false;
+    setResponseQueued(false);
     setConversation({
       id: generateConversationId("sysaudio"),
       title: "",
@@ -836,13 +1048,18 @@ export function useSystemAudio() {
     });
     setLastTranscription("");
     setLastAIResponse("");
+    transcriptTurnsRef.current = [];
+    sessionGenerationRef.current += 1;
+    turnSequenceRef.current = 0;
+    setTranscriptTurns([]);
     setError("");
     setSetupRequired(false);
     setIsProcessing(false);
     setIsAIProcessing(false);
-    setIsPopoverOpen(false);
+    setIsPopoverOpen(capturing);
+    if (capturing) setSessionStartedAt(Date.now());
     setUseSystemPrompt(true);
-  }, []);
+  }, [capturing]);
 
   // Update VAD configuration
   const updateVadConfiguration = useCallback(async (config: VadConfig) => {
@@ -851,7 +1068,7 @@ export function useSystemAudio() {
       // The native task holds a config snapshot. Restart automatic capture for
       // every setting change so sensitivity and silence controls take effect.
       const modeChanged = config.enabled !== vadConfig.enabled;
-      const restartCapture = capturing && (modeChanged || vadConfig.enabled);
+      const restartCapture = capturing && !isPaused && (modeChanged || vadConfig.enabled);
       if (restartCapture) {
         await invoke("stop_system_audio_capture");
         recordingRef.current = false;
@@ -875,7 +1092,7 @@ export function useSystemAudio() {
     } finally {
       endAudioTransition();
     }
-  }, [capturing, vadConfig.enabled, selectedAudioDevices.output.id, selectedAudioDevices.output.name, beginAudioTransition, endAudioTransition]);
+  }, [capturing, isPaused, vadConfig.enabled, selectedAudioDevices.output.id, selectedAudioDevices.output.name, beginAudioTransition, endAudioTransition]);
 
   // Keyboard arrow key support for scrolling (local shortcut)
   useEffect(() => {
@@ -961,6 +1178,25 @@ export function useSystemAudio() {
     captureActive,
     audioLevel,
     captureDeviceName,
+    isPaused,
+    pauseCapture,
+    resumeCapture,
+    microphoneActive,
+    microphoneSpeaking,
+    microphoneLoading,
+    microphoneLevel,
+    microphoneDeviceName: selectedAudioDevices.input?.name || "System default microphone",
+    microphoneDeviceId: selectedAudioDevices.input?.id,
+    microphoneError,
+    handleMicrophoneAudio,
+    updateMicrophoneLevel,
+    updateMicrophoneStatus,
+    transcriptTurns,
+    sessionStartedAt,
+    autoResponseMode,
+    setAutoResponseMode,
+    responseQueued,
+    suggestResponse,
     isAudioTransitioning,
     isProcessing,
     isAIProcessing,

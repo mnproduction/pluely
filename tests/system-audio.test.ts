@@ -15,7 +15,10 @@ const mocks = vi.hoisted(() => ({
     selectedAIProvider: { provider: "test-ai" },
     allAiProviders: [{ id: "test-ai" }],
     systemPrompt: "Test",
-    selectedAudioDevices: { output: { id: "default", name: "Test speakers" } },
+    selectedAudioDevices: {
+      input: { id: "default", name: "Test microphone" },
+      output: { id: "default", name: "Test speakers" },
+    },
   },
   fetchSTT: vi.fn(),
   fetchAIResponse: vi.fn(),
@@ -225,37 +228,126 @@ it("does not send an empty transcript to the answer model", async () => {
 });
 
 it("displays LLM chunks after transcription and passes cancellation to the request", async () => {
-  mocks.fetchSTT.mockResolvedValue("Test transcript");
+  mocks.fetchSTT.mockResolvedValue("What is the test?");
   mocks.fetchAIResponse.mockImplementation(async function* () { yield "First "; yield "answer"; });
   await act(async () => audio.startCapture());
   await act(async () => emit("speech-detected", "AQID"));
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
-  expect(audio.lastTranscription).toBe("Test transcript");
+  expect(audio.lastTranscription).toBe("What is the test?");
   expect(audio.lastAIResponse).toBe("First answer");
   expect(audio.error).toBe("");
   expect(mocks.fetchAIResponse).toHaveBeenCalledWith(expect.objectContaining({ source: "system", signal: expect.any(AbortSignal) }));
 });
 
 it("keeps a completed transcript and answer visible after stopping capture", async () => {
-  mocks.fetchSTT.mockResolvedValue("Test transcript");
+  mocks.fetchSTT.mockResolvedValue("What is the test?");
   mocks.fetchAIResponse.mockImplementation(async function* () { yield "Visible answer"; });
   await act(async () => audio.startCapture());
   await act(async () => emit("speech-detected", "AQID"));
   await act(async () => audio.stopCapture());
-  expect(audio.lastTranscription).toBe("Test transcript");
+  expect(audio.lastTranscription).toBe("What is the test?");
   expect(audio.lastAIResponse).toBe("Visible answer");
   expect(audio.isPopoverOpen).toBe(true);
 });
 
 it("shows a visible error when transcription succeeds but the LLM yields no text", async () => {
-  mocks.fetchSTT.mockResolvedValue("Test transcript");
+  mocks.fetchSTT.mockResolvedValue("What is the test?");
   mocks.fetchAIResponse.mockImplementation(async function* () {});
   await act(async () => audio.startCapture());
   await act(async () => emit("speech-detected", "AQID"));
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
-  expect(audio.lastTranscription).toBe("Test transcript");
+  expect(audio.lastTranscription).toBe("What is the test?");
   expect(audio.error).toContain("no answer text");
   expect(audio.isPopoverOpen).toBe(true);
   expect(audio.isAIProcessing).toBe(false);
   expect(audio.conversation.messages).toHaveLength(0);
+});
+
+it("adds microphone speech as You without auto-generating in question mode", async () => {
+  mocks.fetchSTT.mockResolvedValue("How should I answer?");
+  await act(async () => audio.startCapture());
+  await act(async () => {
+    audio.handleMicrophoneAudio(new Blob([new Uint8Array([1, 2, 3])], { type: "audio/wav" }), Date.now());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  expect(mocks.fetchSTT).toHaveBeenCalledWith(expect.objectContaining({ source: "microphone" }));
+  expect(audio.transcriptTurns).toHaveLength(1);
+  expect(audio.transcriptTurns[0]).toMatchObject({ source: "microphone", speaker: "You" });
+  expect(mocks.fetchAIResponse).not.toHaveBeenCalled();
+});
+
+it("pauses and resumes both-channel Listen without clearing the transcript", async () => {
+  mocks.fetchSTT.mockResolvedValue("A captured statement");
+  await act(async () => audio.startCapture());
+  await act(async () => {
+    audio.handleMicrophoneAudio(new Blob([new Uint8Array([1])], { type: "audio/wav" }), Date.now());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  await act(async () => audio.pauseCapture());
+  expect(audio.isPaused).toBe(true);
+  expect(audio.transcriptTurns).toHaveLength(1);
+  await act(async () => audio.resumeCapture());
+  expect(audio.isPaused).toBe(false);
+  expect(audio.transcriptTurns).toHaveLength(1);
+  expect(active).toBe(true);
+});
+
+it("queues a newer generation without aborting the active request", async () => {
+  let releaseFirst!: () => void;
+  const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve; });
+  let call = 0;
+  mocks.fetchAIResponse.mockImplementation(async function* () {
+    call += 1;
+    if (call === 1) {
+      yield "First answer";
+      await firstGate;
+      return;
+    }
+    yield "Second answer";
+  });
+
+  let first!: Promise<void>;
+  await act(async () => {
+    first = audio.processWithAI("First", "Prompt", []);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  const firstSignal = mocks.fetchAIResponse.mock.calls[0][0].signal as AbortSignal;
+  await act(async () => audio.processWithAI("Second", "Prompt", []));
+  expect(firstSignal.aborted).toBe(false);
+  expect(audio.responseQueued).toBe(true);
+
+  await act(async () => {
+    releaseFirst();
+    await first;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  expect(mocks.fetchAIResponse).toHaveBeenCalledTimes(2);
+  expect(audio.lastAIResponse).toBe("Second answer");
+  expect(audio.responseQueued).toBe(false);
+});
+
+it("lets an in-flight response finish after capture stops", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  mocks.fetchSTT.mockResolvedValue("What should I say?");
+  mocks.fetchAIResponse.mockImplementation(async function* () {
+    await gate;
+    yield "Keep the finished response";
+  });
+
+  await act(async () => audio.startCapture());
+  await act(async () => {
+    emit("speech-detected", "AQID");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  const signal = mocks.fetchAIResponse.mock.calls[0][0].signal as AbortSignal;
+  await act(async () => audio.stopCapture());
+  expect(signal.aborted).toBe(false);
+
+  await act(async () => {
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  expect(audio.lastAIResponse).toBe("Keep the finished response");
+  expect(audio.isPopoverOpen).toBe(true);
 });

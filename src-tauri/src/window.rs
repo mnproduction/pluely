@@ -128,14 +128,20 @@ pub fn center_window_completely(window: &WebviewWindow) -> Result<(), Box<dyn st
 }
 
 #[tauri::command]
-pub fn set_window_height(window: tauri::WebviewWindow, height: u32) -> Result<(), String> {
+pub fn set_window_height(
+    window: tauri::WebviewWindow,
+    height: u32,
+    width: Option<u32>,
+) -> Result<(), String> {
     use tauri::{LogicalSize, Size};
 
-    // Simply set the window size with fixed width and new height
-    let new_size = LogicalSize::new(600.0, height as f64);
+    let new_size = LogicalSize::new(width.unwrap_or(600) as f64, height as f64);
     window
         .set_size(Size::Logical(new_size))
         .map_err(|e| format!("Failed to resize window: {}", e))?;
+
+    position_window_top_center(&window, TOP_OFFSET)
+        .map_err(|e| format!("Failed to position window: {}", e))?;
 
     Ok(())
 }
