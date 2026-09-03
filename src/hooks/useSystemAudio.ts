@@ -134,6 +134,22 @@ export function useSystemAudio() {
   const isSavingRef = useRef<boolean>(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
+  // Report state/counts only. Neither prompts, responses nor provider values leave this window.
+  useEffect(() => {
+    const report = () => {
+      void invoke("diagnostics_record_pipeline", { update: {
+        panel_open: isPopoverOpen, capture_enabled: capturing, capture_active: captureActive,
+        recording: isRecordingInContinuousMode, transcribing: isProcessing, generating: isAIProcessing,
+        stt_configured: Boolean(selectedSttProvider.provider), ai_configured: Boolean(selectedAIProvider.provider),
+        transcript_chars: lastTranscription.length, response_chars: lastAIResponse.length, has_error: Boolean(error),
+      } }).catch(() => {});
+    };
+    const timer = setTimeout(report, 200);
+    const heartbeat = setInterval(report, 2000);
+    return () => { clearTimeout(timer); clearInterval(heartbeat); };
+  }, [isPopoverOpen, capturing, captureActive, isRecordingInContinuousMode, isProcessing, isAIProcessing,
+    selectedSttProvider.provider, selectedAIProvider.provider, lastTranscription.length, lastAIResponse.length, error]);
+
   // Load context settings and VAD config from localStorage on mount
   useEffect(() => {
     const savedContext = safeLocalStorage.getItem(
@@ -301,6 +317,7 @@ export function useSystemAudio() {
 
               if (transcription.trim()) {
                 setLastTranscription(transcription);
+                setIsProcessing(false);
                 setError("");
 
                 const effectiveSystemPrompt = useSystemPrompt
@@ -347,6 +364,11 @@ export function useSystemAudio() {
     capturing,
     selectedSttProvider,
     allSttProviders,
+    selectedAIProvider,
+    allAiProviders,
+    useSystemPrompt,
+    systemPrompt,
+    contextContent,
     conversation.messages.length,
   ]);
 
@@ -518,7 +540,8 @@ export function useSystemAudio() {
         abortControllerRef.current.abort();
       }
 
-      abortControllerRef.current = new AbortController();
+      const requestController = new AbortController();
+      abortControllerRef.current = requestController;
 
       try {
         setIsAIProcessing(true);
@@ -527,34 +550,26 @@ export function useSystemAudio() {
 
         let fullResponse = "";
 
-        if (!selectedAIProvider.provider) {
-          setError("No AI provider selected.");
-          return;
-        }
-
         const provider = allAiProviders.find(
           (p) => p.id === selectedAIProvider.provider
         );
-        if (!provider) {
-          setError("AI provider config not found.");
-          return;
-        }
 
-        try {
-          for await (const chunk of fetchAIResponse({
-            provider: provider,
-            selectedProvider: selectedAIProvider,
-            systemPrompt: prompt,
-            history: previousMessages,
-            userMessage: transcription,
-            imagesBase64: [],
-          })) {
-            fullResponse += chunk;
-            setLastAIResponse((prev) => prev + chunk);
-          }
-        } catch (aiError: any) {
-          setError(aiError.message || "Failed to get AI response");
+        for await (const chunk of fetchAIResponse({
+          provider,
+          selectedProvider: selectedAIProvider,
+          systemPrompt: prompt,
+          history: previousMessages,
+          userMessage: transcription,
+          imagesBase64: [],
+          signal: requestController.signal,
+          source: "system",
+        })) {
+          if (requestController.signal.aborted) return;
+          fullResponse += chunk;
+          setLastAIResponse((prev) => prev + chunk);
         }
+        if (requestController.signal.aborted) return;
+        if (!fullResponse.trim()) throw new Error("The AI provider returned no answer text. Check AI settings and retry.");
 
         if (fullResponse) {
           const timestamp = Date.now();
@@ -580,9 +595,12 @@ export function useSystemAudio() {
           }));
         }
       } catch (err) {
-        setError("Failed to get AI response");
+        if (!requestController.signal.aborted) {
+          setError(err instanceof Error ? err.message : "Failed to get AI response");
+          setIsPopoverOpen(true);
+        }
       } finally {
-        setIsAIProcessing(false);
+        if (abortControllerRef.current === requestController) setIsAIProcessing(false);
         // No auto-restart - user manually controls when to start next recording
       }
     },

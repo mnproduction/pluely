@@ -107,6 +107,82 @@ pub enum AudioSource {
     Other,
 }
 
+#[derive(Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LlmStage {
+    Preparing,
+    Sending,
+    Streaming,
+    Succeeded,
+    Empty,
+    HttpError,
+    NetworkError,
+    InvalidConfig,
+    DecodeError,
+    TimedOut,
+    Cancelled,
+}
+
+#[derive(Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LlmModelKind {
+    Grok,
+    Gpt,
+    Claude,
+    Gemini,
+    Other,
+    Unset,
+}
+
+#[derive(Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConfigField {
+    Provider,
+    ApiKey,
+    Model,
+    Other,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LlmUpdate {
+    request_id: Uuid,
+    stage: LlmStage,
+    provider: ProviderKind,
+    model: LlmModelKind,
+    source: AudioSource,
+    duration_ms: u64,
+    first_text_ms: Option<u64>,
+    response_chars: u64,
+    chunks: u64,
+    http_status: Option<u16>,
+    error_kind: Option<ErrorKind>,
+    missing: Option<ConfigField>,
+}
+
+#[derive(Clone, Serialize)]
+struct LlmRecord {
+    updated_at_ms: u64,
+    #[serde(flatten)]
+    update: LlmUpdate,
+}
+
+#[derive(Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PipelineInfo {
+    panel_open: bool,
+    capture_enabled: bool,
+    capture_active: bool,
+    recording: bool,
+    transcribing: bool,
+    generating: bool,
+    stt_configured: bool,
+    ai_configured: bool,
+    transcript_chars: u64,
+    response_chars: u64,
+    has_error: bool,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SttUpdate {
@@ -137,6 +213,9 @@ struct Snapshot {
     at_ms: u64,
     capture: CaptureInfo,
     requests: VecDeque<SttRecord>,
+    llm_requests: VecDeque<LlmRecord>,
+    pipeline: PipelineInfo,
+    pipeline_updated_at_ms: u64,
     events: VecDeque<Event>,
 }
 
@@ -149,6 +228,9 @@ impl Default for Snapshot {
             at_ms: now_ms(),
             capture: CaptureInfo::default(),
             requests: VecDeque::new(),
+            llm_requests: VecDeque::new(),
+            pipeline: PipelineInfo::default(),
+            pipeline_updated_at_ms: 0,
             events: VecDeque::new(),
         }
     }
@@ -221,6 +303,22 @@ impl Diagnostics {
             });
             while state.requests.len() > 32 {
                 state.requests.pop_front();
+            }
+            state.at_ms = now_ms();
+        }
+    }
+
+    fn record_llm(&self, update: LlmUpdate) {
+        if let Ok(mut state) = self.snapshot.lock() {
+            state
+                .llm_requests
+                .retain(|r| r.update.request_id != update.request_id);
+            state.llm_requests.push_back(LlmRecord {
+                updated_at_ms: now_ms(),
+                update,
+            });
+            while state.llm_requests.len() > 32 {
+                state.llm_requests.pop_front();
             }
             state.at_ms = now_ms();
         }
@@ -460,6 +558,33 @@ pub fn diagnostics_record_stt(
     Ok(())
 }
 
+#[tauri::command]
+pub fn diagnostics_record_llm(
+    window: WebviewWindow,
+    state: State<Diagnostics>,
+    update: LlmUpdate,
+) -> Result<(), String> {
+    check_window(&window)?;
+    state.record_llm(update);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn diagnostics_record_pipeline(
+    window: WebviewWindow,
+    state: State<Diagnostics>,
+    update: PipelineInfo,
+) -> Result<(), String> {
+    if window.label() != "main" {
+        return Err("Pipeline diagnostics require the assistant window".into());
+    }
+    if let Ok(mut snapshot) = state.snapshot.lock() {
+        snapshot.pipeline = update;
+        snapshot.pipeline_updated_at_ms = now_ms();
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -530,5 +655,28 @@ mod tests {
         assert!(TcpStream::connect(&next.address).await.is_err());
         diag.stop();
         fs::remove_dir(&directory).unwrap();
+    }
+
+    #[test]
+    fn llm_schema_excludes_content_and_bounds_request_history() {
+        let diag = Diagnostics::default();
+        let value = serde_json::json!({
+            "request_id":Uuid::new_v4(),"stage":"succeeded","provider":"xai","model":"grok",
+            "source":"system","duration_ms":500,"first_text_ms":250,"response_chars":25,
+            "chunks":2,"http_status":200,"error_kind":null,"missing":null
+        });
+        for _ in 0..50 {
+            let mut update: LlmUpdate = serde_json::from_value(value.clone()).unwrap();
+            update.request_id = Uuid::new_v4();
+            diag.record_llm(update);
+        }
+        assert_eq!(diag.snapshot.lock().unwrap().llm_requests.len(), 32);
+        let mut forbidden = value;
+        forbidden["prompt"] = "private conversation".into();
+        assert!(serde_json::from_value::<LlmUpdate>(forbidden).is_err());
+        assert!(serde_json::from_value::<PipelineInfo>(
+            serde_json::json!({"response":"private text"})
+        )
+        .is_err());
     }
 }

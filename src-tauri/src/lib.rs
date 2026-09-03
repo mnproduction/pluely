@@ -71,6 +71,8 @@ pub fn run() {
             diagnostics::diagnostics_stop,
             diagnostics::diagnostics_status,
             diagnostics::diagnostics_record_stt,
+            diagnostics::diagnostics_record_llm,
+            diagnostics::diagnostics_record_pipeline,
             private_store::private_store_load,
             private_store::private_store_set,
             window::set_window_height,

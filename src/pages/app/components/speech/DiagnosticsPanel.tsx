@@ -38,7 +38,7 @@ export const DiagnosticsPanel = () => {
       </div>
       <p className="text-[11px] text-muted-foreground">
         {enabled ? "Available on this computer for 30 minutes. " : "Enable live troubleshooting on this computer. "}
-        Shares signal levels and STT status codes. Audio, transcripts and API keys are excluded.
+        Shares capture, STT, AI request and panel status, timing and text counts. Audio, conversation text and API keys are excluded.
       </p>
       {error && <p className="text-[11px] text-red-600">{error}</p>}
     </div>

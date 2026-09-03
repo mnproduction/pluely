@@ -48,3 +48,30 @@ export function sttErrorKind(status: number, code: unknown): SttErrorKind {
   if (status >= 400) return "bad_request";
   return "unknown";
 }
+
+export type LlmStage = "preparing" | "sending" | "streaming" | "succeeded" | "empty" | "http_error" | "network_error" | "invalid_config" | "decode_error" | "timed_out" | "cancelled";
+export interface LlmDiagnostic {
+  request_id: string;
+  stage: LlmStage;
+  provider: string;
+  model: "grok" | "gpt" | "claude" | "gemini" | "other" | "unset";
+  source: AudioSource;
+  duration_ms: number;
+  first_text_ms: number | null;
+  response_chars: number;
+  chunks: number;
+  http_status: number | null;
+  error_kind: SttErrorKind | null;
+  missing: "provider" | "api_key" | "model" | "other" | null;
+}
+
+export function llmMetadata(url: string, model: unknown): Pick<LlmDiagnostic, "provider" | "model"> {
+  const provider = sttMetadata(url, "").provider;
+  // Only a fixed model family leaves the app, never the editable model field.
+  const family = typeof model === "string" ? model.split("-")[0].toLowerCase() : "";
+  return { provider, model: !model ? "unset" : family === "grok" || family === "gpt" || family === "claude" || family === "gemini" ? family : "other" };
+}
+
+export async function recordLlm(update: LlmDiagnostic): Promise<void> {
+  try { await invoke("diagnostics_record_llm", { update }); } catch {}
+}

@@ -223,3 +223,28 @@ it("does not send an empty transcript to the answer model", async () => {
   expect(audio.error).toContain("No speech was recognized");
   expect(audio.isProcessing).toBe(false);
 });
+
+it("displays LLM chunks after transcription and passes cancellation to the request", async () => {
+  mocks.fetchSTT.mockResolvedValue("Test transcript");
+  mocks.fetchAIResponse.mockImplementation(async function* () { yield "First "; yield "answer"; });
+  await act(async () => audio.startCapture());
+  await act(async () => emit("speech-detected", "AQID"));
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+  expect(audio.lastTranscription).toBe("Test transcript");
+  expect(audio.lastAIResponse).toBe("First answer");
+  expect(audio.error).toBe("");
+  expect(mocks.fetchAIResponse).toHaveBeenCalledWith(expect.objectContaining({ source: "system", signal: expect.any(AbortSignal) }));
+});
+
+it("shows a visible error when transcription succeeds but the LLM yields no text", async () => {
+  mocks.fetchSTT.mockResolvedValue("Test transcript");
+  mocks.fetchAIResponse.mockImplementation(async function* () {});
+  await act(async () => audio.startCapture());
+  await act(async () => emit("speech-detected", "AQID"));
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+  expect(audio.lastTranscription).toBe("Test transcript");
+  expect(audio.error).toContain("no answer text");
+  expect(audio.isPopoverOpen).toBe(true);
+  expect(audio.isAIProcessing).toBe(false);
+  expect(audio.conversation.messages).toHaveLength(0);
+});

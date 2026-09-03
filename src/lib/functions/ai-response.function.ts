@@ -10,6 +10,7 @@ import { providerFetch } from "./provider-fetch";
 import curl2Json from "@bany/curl-to-json";
 import { getResponseSettings, RESPONSE_LENGTHS, LANGUAGES } from "@/lib";
 import { MARKDOWN_FORMATTING_INSTRUCTIONS } from "@/config/constants";
+import { llmMetadata, recordLlm, sttErrorKind, type AudioSource, type LlmDiagnostic, type LlmStage } from "./diagnostics";
 
 function buildEnhancedSystemPrompt(baseSystemPrompt?: string): string {
   const responseSettings = getResponseSettings();
@@ -50,7 +51,39 @@ export async function* fetchAIResponse(params: {
   userMessage: string;
   imagesBase64?: string[];
   signal?: AbortSignal;
+  source?: AudioSource;
 }): AsyncIterable<string> {
+  const startedAt = Date.now();
+  const diagnostic: LlmDiagnostic = {
+    request_id: crypto.randomUUID(), stage: "preparing", ...llmMetadata("", ""),
+    source: params.source ?? "other", duration_ms: 0, first_text_ms: null,
+    response_chars: 0, chunks: 0, http_status: null, error_kind: null, missing: null,
+  };
+  let lastReportAt = 0;
+  let finished = false;
+  let hasAnswerText = false;
+  let timedOut = false;
+  let failureStage: LlmStage = "invalid_config";
+  let deadline: ReturnType<typeof setTimeout> | undefined;
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  params.signal?.addEventListener("abort", abort, { once: true });
+  const report = async (stage: LlmStage) => {
+    diagnostic.stage = stage;
+    diagnostic.duration_ms = Date.now() - startedAt;
+    lastReportAt = Date.now();
+    await recordLlm({ ...diagnostic });
+  };
+  const receive = async (text: string) => {
+    if (text.trim()) hasAnswerText = true;
+    const first = diagnostic.first_text_ms === null;
+    if (first) diagnostic.first_text_ms = Date.now() - startedAt;
+    diagnostic.response_chars += Array.from(text).length;
+    diagnostic.chunks++;
+    if (first || Date.now() - lastReportAt >= 1000) await report("streaming");
+    return text;
+  };
   try {
     const {
       provider,
@@ -59,21 +92,18 @@ export async function* fetchAIResponse(params: {
       history = [],
       userMessage,
       imagesBase64 = [],
-      signal,
     } = params;
 
     // Check if already aborted
-    if (signal?.aborted) {
+    if (params.signal?.aborted) {
       return;
     }
 
     const enhancedSystemPrompt = buildEnhancedSystemPrompt(systemPrompt);
 
-    if (!provider) {
-      throw new Error(`Provider not provided`);
-    }
-    if (!selectedProvider) {
-      throw new Error(`Selected provider not provided`);
+    if (!provider || !selectedProvider?.provider) {
+      diagnostic.missing = "provider";
+      throw new Error("No AI provider configured. Select one in AI settings.");
     }
 
     let curlJson;
@@ -87,15 +117,25 @@ export async function* fetchAIResponse(params: {
       );
     }
 
+    const allVariables: Record<string, string> = {
+      ...Object.fromEntries(
+        Object.entries(selectedProvider.variables || {}).map(([key, value]) => [key.toUpperCase(), value])
+      ),
+      SYSTEM_PROMPT: enhancedSystemPrompt || "",
+    };
+    const url = deepVariableReplacer(curlJson.url || "", allVariables);
+    Object.assign(diagnostic, llmMetadata(url, allVariables.MODEL));
+    await report("preparing");
     const extractedVariables = extractVariables(provider.curl);
     const requiredVars = extractedVariables.filter(
       ({ key }) => key !== "SYSTEM_PROMPT" && key !== "TEXT" && key !== "IMAGE"
     );
     for (const { key } of requiredVars) {
       if (
-        !selectedProvider.variables?.[key] ||
-        selectedProvider.variables[key].trim() === ""
+        !allVariables[key.toUpperCase()] ||
+        allVariables[key.toUpperCase()].trim() === ""
       ) {
+        diagnostic.missing = key === "api_key" ? "api_key" : key === "model" ? "model" : "other";
         throw new Error(
           `Missing required variable: ${key}. Please configure it in settings.`
         );
@@ -111,12 +151,6 @@ export async function* fetchAIResponse(params: {
       );
     }
 
-    const allVariables = {
-      ...Object.fromEntries(
-        Object.entries(selectedProvider.variables).map(([key, value]) => [key.toUpperCase(), value])
-      ),
-      SYSTEM_PROMPT: enhancedSystemPrompt || "",
-    };
     // Expand only the trusted provider template. Chat text and history must
     // never interpret {{API_KEY}} or other configuration placeholders.
     let bodyObj: any = deepVariableReplacer(curlJson.data || {}, allVariables);
@@ -133,8 +167,6 @@ export async function* fetchAIResponse(params: {
       );
       bodyObj[messagesKey] = finalMessages;
     }
-
-    let url = deepVariableReplacer(curlJson.url || "", allVariables);
 
     const headers = deepVariableReplacer(curlJson.header || {}, allVariables);
     headers["Content-Type"] = "application/json";
@@ -153,124 +185,86 @@ export async function* fetchAIResponse(params: {
     }
 
 
+    Object.assign(diagnostic, llmMetadata(url, bodyObj?.model ?? allVariables.MODEL));
+    await report("sending");
+    failureStage = "network_error";
+    deadline = setTimeout(() => { timedOut = true; controller.abort(); }, 120_000);
     let response;
     try {
       response = await providerFetch(url, {
         method: curlJson.method || "POST",
         headers,
         body: curlJson.method === "GET" ? undefined : JSON.stringify(bodyObj),
-        signal,
+        signal: controller.signal,
       });
     } catch (fetchError) {
-      // Check if aborted
-      if (
-        signal?.aborted ||
-        (fetchError instanceof Error && fetchError.name === "AbortError")
-      ) {
-        return; // Silently return on abort
-      }
-      yield `Network error during API request: ${
-        fetchError instanceof Error ? fetchError.message : "Unknown error"
-      }`;
-      return;
+      diagnostic.error_kind = "network";
+      throw new Error("Could not connect to the AI provider. Check the connection and provider settings.");
     }
 
+    diagnostic.http_status = response.status;
     if (!response.ok) {
-      let errorText = "";
-      try {
-        errorText = await response.text();
-      } catch {}
-      yield `API request failed: ${response.status} ${response.statusText}${
-        errorText ? ` - ${errorText}` : ""
-      }`;
-      return;
+      failureStage = "http_error";
+      let code: unknown;
+      try { const body = await response.json(); code = body.error?.code ?? body.code; } catch {}
+      diagnostic.error_kind = sttErrorKind(response.status, code);
+      const hints = { unauthorized: "Check the API key and account permissions.", quota: "Check the provider account balance and quota.", rate_limit: "Provider rate limit reached. Try again shortly.", model: "Check the selected model and your access to it." };
+      const hint = hints[diagnostic.error_kind as keyof typeof hints] ?? "Check the AI provider settings or try again.";
+      throw new Error(`AI provider returned HTTP ${response.status}. ${hint}`);
     }
 
+    // Publish response headers before waiting for content, including slow reasoning models.
+    await report("streaming");
+    failureStage = "decode_error";
     if (!provider?.streaming) {
-      let json;
-      try {
-        json = await response.json();
-      } catch (parseError) {
-        yield `Failed to parse non-streaming response: ${
-          parseError instanceof Error ? parseError.message : "Unknown error"
-        }`;
-        return;
-      }
-      const content =
-        getByPath(json, provider?.responseContentPath || "") || "";
-      yield content;
-      return;
-    }
-
-    if (!response.body) {
-      yield "Streaming not supported or response body missing";
-      return;
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    while (true) {
-      // Check if aborted
-      if (signal?.aborted) {
-        reader.cancel();
-        return;
-      }
-
-      let readResult;
-      try {
-        readResult = await reader.read();
-      } catch (readError) {
-        // Check if aborted
-        if (
-          signal?.aborted ||
-          (readError instanceof Error && readError.name === "AbortError")
-        ) {
-          return; // Silently return on abort
-        }
-        yield `Error reading stream: ${
-          readError instanceof Error ? readError.message : "Unknown error"
-        }`;
-        return;
-      }
-      const { done, value } = readResult;
-      if (done) break;
-
-      // Check if aborted before processing
-      if (signal?.aborted) {
-        reader.cancel();
-        return;
-      }
-
-      buffer += decoder.decode(value, { stream: true });
-
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-      for (const line of lines) {
-        if (line.startsWith("data:")) {
-          const trimmed = line.substring(5).trim();
-          if (!trimmed || trimmed === "[DONE]") continue;
-          try {
-            const parsed = JSON.parse(trimmed);
-            const delta = getStreamingContent(
-              parsed,
-              provider?.responseContentPath || ""
-            );
-            if (delta) {
-              yield delta;
-            }
-          } catch (e) {
-            // Ignore parsing errors for partial JSON chunks
+      const json = await response.json();
+      const content = getByPath(json, provider.responseContentPath || "");
+      if (typeof content === "string" && content.trim()) yield await receive(content);
+    } else {
+      if (!response.body) throw new Error("AI response body is missing.");
+      reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let ended = false;
+      while (!ended) {
+        if (controller.signal.aborted) throw new DOMException("Aborted", "AbortError");
+        const { done, value } = await reader.read();
+        buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = done ? "" : lines.pop() || "";
+        for (const line of lines) {
+          if (!line.startsWith("data:")) continue;
+          const payload = line.substring(5).trim();
+          if (!payload) continue;
+          if (payload === "[DONE]") { ended = true; break; }
+          const parsed = JSON.parse(payload);
+          if (parsed.error) {
+            diagnostic.error_kind = sttErrorKind(0, parsed.error.code);
+            throw new Error("AI provider reported a streaming error. Check provider settings and retry.");
           }
+          const delta = getStreamingContent(parsed, provider.responseContentPath || "");
+          if (delta) yield await receive(delta);
         }
+        if (done) break;
       }
     }
+    if (!hasAnswerText) {
+      failureStage = "empty";
+      throw new Error("The AI provider returned no answer text. Check the model and response format in AI settings.");
+    }
+    await report("succeeded");
+    finished = true;
   } catch (error) {
-    throw new Error(
-      `Error in fetchAIResponse: ${
-        error instanceof Error ? error.message : "Unknown error"
-      }`
-    );
+    if (params.signal?.aborted && !timedOut) { await report("cancelled"); finished = true; return; }
+    await report(timedOut ? "timed_out" : failureStage);
+    finished = true;
+    if (timedOut) throw new Error("AI response timed out after 120 seconds. Try a faster model or retry.");
+    throw error instanceof Error ? error : new Error("AI request failed.");
+  } finally {
+    clearTimeout(deadline);
+    params.signal?.removeEventListener("abort", abort);
+    controller.abort();
+    try { await reader?.cancel(); } catch {}
+    if (!finished) await report("cancelled");
   }
 }
