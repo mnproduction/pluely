@@ -56,4 +56,19 @@ describe("direct provider requests", () => {
     expect(JSON.stringify(body.messages)).toContain("aGVsbG8=");
     expect(JSON.stringify(body.messages)).not.toContain("fake-xai-test-key");
   });
+  it.each(["Тест українського мовлення", ""])("preserves OpenAI Whisper recognition without fabricating text: %s", async (text) => {
+    nativeFetch.mockResolvedValue(new Response(JSON.stringify({ text })));
+    const provider = SPEECH_TO_TEXT_PROVIDERS.find((p) => p.id === "openai-whisper")!;
+    const result = await fetchSTT({
+      provider,
+      selectedProvider: { provider: provider.id, variables: { API_KEY: "fake-openai-key", MODEL: "whisper-1" } },
+      audio: new Blob([new Uint8Array([1, 2, 3])], { type: "audio/wav" }),
+    });
+    expect(result).toBe(text);
+    const [url, options] = nativeFetch.mock.calls[0];
+    expect(url).toBe("https://api.openai.com/v1/audio/transcriptions");
+    expect(options.body.get("model")).toBe("whisper-1");
+    expect(options.body.get("file").name).toBe("audio.wav");
+    expect(options.headers.Authorization).toBe("Bearer fake-openai-key");
+  });
 });

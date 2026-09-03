@@ -23,6 +23,7 @@ import { SettingsPanel } from "./SettingsPanel";
 import { PermissionFlow } from "./PermissionFlow";
 import { QuickActions } from "./QuickActions";
 import { Warning } from "./Warning";
+import { InputLevel } from "./InputLevel";
 import { useSystemAudioType } from "@/hooks";
 import { useApp } from "@/contexts";
 import { cn } from "@/lib/utils";
@@ -30,6 +31,9 @@ import { cn } from "@/lib/utils";
 export const SystemAudio = (props: useSystemAudioType) => {
   const {
     capturing,
+    captureActive,
+    audioLevel,
+    captureDeviceName,
     isAudioTransitioning,
     isProcessing,
     isAIProcessing,
@@ -66,7 +70,7 @@ export const SystemAudio = (props: useSystemAudioType) => {
     scrollAreaRef,
   } = props;
 
-  const { localFeaturesEnabled, supportsImages } = useApp();
+  const { localFeaturesEnabled, supportsImages, selectedAudioDevices } = useApp();
 
   // View mode toggle
   const [conversationMode, setConversationMode] = useState(false);
@@ -337,6 +341,15 @@ export const SystemAudio = (props: useSystemAudioType) => {
                   />
                 ) : (
                   <>
+                    <InputLevel
+                      active={captureActive}
+                      level={audioLevel}
+                      deviceName={captureDeviceName}
+                      selectedDeviceName={selectedAudioDevices.output.name}
+                      isVadMode={isVadMode}
+                      isProcessing={isProcessing}
+                      isAIProcessing={isAIProcessing}
+                    />
                     {/* Recording Panel */}
                     <RecordingPanel
                       isVadMode={isVadMode}

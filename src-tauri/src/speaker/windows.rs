@@ -390,6 +390,96 @@ mod tests {
     use futures_util::StreamExt;
 
     #[tokio::test]
+    #[ignore = "plays a quiet synthetic tone on MIRA_TEST_OUTPUT_NAME; only signal metrics are retained"]
+    async fn selected_loopback_receives_test_tone() {
+        wasapi::initialize_mta().ok().unwrap();
+        let _com = ComApartment;
+        let outputs = get_output_devices().unwrap();
+        let name = std::env::var("MIRA_TEST_OUTPUT_NAME").unwrap_or_default();
+        let matching: Vec<_> = outputs.iter().filter(|d| d.name == name).collect();
+        assert_eq!(
+            matching.len(),
+            1,
+            "Set MIRA_TEST_OUTPUT_NAME to one exact output name: {:?}",
+            outputs.iter().map(|d| &d.name).collect::<Vec<_>>()
+        );
+        let device_id = matching[0].id.clone();
+        let mut capture = SpeakerInput::new(Some(device_id.clone()))
+            .unwrap()
+            .stream()
+            .unwrap();
+        let sample_rate = capture.sample_rate();
+        let playback = thread::spawn(move || -> Result<()> {
+            wasapi::initialize_mta().ok()?;
+            let _com = ComApartment;
+            let device = find_device_by_id(&Direction::Render, &device_id).unwrap();
+            let mut client = device.get_iaudioclient()?;
+            let format = WaveFormat::new(32, 32, &SampleType::Float, sample_rate as usize, 1, None);
+            let (period, _) = client.get_device_period()?;
+            client.initialize_client(
+                &format,
+                &Direction::Render,
+                &StreamMode::EventsShared {
+                    autoconvert: true,
+                    buffer_duration_hns: period,
+                },
+            )?;
+            let event = client.set_get_eventhandle()?;
+            let render = client.get_audiorenderclient()?;
+            let started = std::time::Instant::now();
+            let mut frame_index = 0_u64;
+            client.start_stream()?;
+            while started.elapsed() < Duration::from_secs(2) {
+                let frames = client.get_available_space_in_frames()?;
+                let mut bytes = Vec::with_capacity(frames as usize * 4);
+                for _ in 0..frames {
+                    let phase =
+                        frame_index as f64 * std::f64::consts::TAU * 659.0 / sample_rate as f64;
+                    bytes.extend_from_slice(&(0.03 * phase.sin() as f32).to_le_bytes());
+                    frame_index += 1;
+                }
+                render.write_to_device(frames as usize, &bytes, None)?;
+                event.wait_for_event(1000)?;
+            }
+            client.stop_stream()?;
+            Ok(())
+        });
+        let deadline = tokio::time::sleep(Duration::from_secs(3));
+        tokio::pin!(deadline);
+        let mut count = 0_u64;
+        let mut energy = 0.0_f64;
+        let mut sine = 0.0_f64;
+        let mut cosine = 0.0_f64;
+        loop {
+            tokio::select! {
+                biased;
+                _ = &mut deadline => break,
+                sample = capture.next() => {
+                    let Some(sample) = sample else { break; };
+                    let phase = count as f64 * std::f64::consts::TAU * 659.0 / sample_rate as f64;
+                    sine += sample as f64 * phase.sin();
+                    cosine += sample as f64 * phase.cos();
+                    energy += (sample as f64).powi(2);
+                    count += 1;
+                }
+            }
+        }
+        drop(capture);
+        playback.join().unwrap().unwrap();
+        let rms = (energy / count.max(1) as f64).sqrt();
+        let tone_amplitude = 2.0 * sine.hypot(cosine) / count.max(1) as f64;
+        eprintln!("Output: {name}; rate: {sample_rate}; samples: {count}; RMS: {rms:.6}; test tone: {tone_amplitude:.6}");
+        assert!(
+            count > sample_rate as u64,
+            "No sustained loopback packets received"
+        );
+        assert!(
+            tone_amplitude > 0.0002,
+            "Generated test tone is missing from captured audio"
+        );
+    }
+
+    #[tokio::test]
     #[ignore = "requires a Windows audio output device; samples are discarded locally"]
     async fn loopback_can_wait_then_discard_and_restart() {
         for _ in 0..2 {

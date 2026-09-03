@@ -18,7 +18,7 @@ export interface STTParams {
 }
 
 /**
- * Transcribes audio and returns either the transcription or an error/warning message as a single string.
+ * Returns recognized speech only. Empty recognition stays empty; failures throw.
  */
 export async function fetchSTT(params: STTParams): Promise<string> {
   let warnings: string[] = [];
@@ -197,7 +197,7 @@ export async function fetchSTT(params: STTParams): Promise<string> {
     const transcription = (getByPath(data, path) || "").trim();
 
     if (!transcription) {
-      return [...warnings, "No transcription found"].join("; ");
+      return "";
     }
 
     // Return transcription with any warnings

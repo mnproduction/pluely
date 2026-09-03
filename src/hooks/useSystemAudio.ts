@@ -32,6 +32,12 @@ export interface VadConfig {
   max_recording_duration_secs: number;
 }
 
+export interface SystemAudioLevel {
+  rms: number;
+  peak: number;
+  samples: number;
+}
+
 // OPTIMIZED VAD defaults - matches backend exactly for perfect performance
 const DEFAULT_VAD_CONFIG: VadConfig = {
   enabled: true,
@@ -69,6 +75,9 @@ export function useSystemAudio() {
   const globalShortcuts = useGlobalShortcuts();
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
   const [capturing, setCapturing] = useState(false);
+  const [captureActive, setCaptureActive] = useState(false);
+  const [audioLevel, setAudioLevel] = useState<SystemAudioLevel | null>(null);
+  const [captureDeviceName, setCaptureDeviceName] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [isAIProcessing, setIsAIProcessing] = useState(false);
   const [lastTranscription, setLastTranscription] = useState<string>("");
@@ -177,6 +186,9 @@ export function useSystemAudio() {
     let stopUnlisten: (() => void) | undefined;
     let errorUnlisten: (() => void) | undefined;
     let discardedUnlisten: (() => void) | undefined;
+    let levelUnlisten: (() => void) | undefined;
+    let captureStartUnlisten: (() => void) | undefined;
+    let captureStopUnlisten: (() => void) | undefined;
     let disposed = false;
     const register = async (name: string, handler: (event: { payload: unknown }) => void) => {
       const unlisten = await listen(name, (event) => { if (!disposed) handler(event); });
@@ -186,6 +198,17 @@ export function useSystemAudio() {
 
     const setupContinuousListeners = async () => {
       try {
+        levelUnlisten = await register("system-audio-level", (event) => {
+          setAudioLevel(event.payload as SystemAudioLevel);
+        });
+        captureStartUnlisten = await register("capture-started", () => {
+          setCaptureActive(true);
+          setAudioLevel(null);
+        });
+        captureStopUnlisten = await register("capture-stopped", () => {
+          setCaptureActive(false);
+          setAudioLevel(null);
+        });
         // Progress updates (every second)
         progressUnlisten = await register("recording-progress", (event) => {
           const seconds = event.payload as number;
@@ -236,6 +259,9 @@ export function useSystemAudio() {
       if (stopUnlisten) stopUnlisten();
       if (errorUnlisten) errorUnlisten();
       if (discardedUnlisten) discardedUnlisten();
+      if (levelUnlisten) levelUnlisten();
+      if (captureStartUnlisten) captureStartUnlisten();
+      if (captureStopUnlisten) captureStopUnlisten();
     };
   }, []);
 
@@ -313,7 +339,8 @@ export function useSystemAudio() {
                   previousMessages
                 );
               } else {
-                setError("Received empty transcription");
+                setError("No speech was recognized. Check the System Audio level and the meeting's speaker device, or try Manual mode.");
+                setIsPopoverOpen(true);
               }
             } catch (sttError: any) {
               console.error("STT Error:", sttError);
@@ -466,6 +493,7 @@ export function useSystemAudio() {
           : null;
 
       // Start a new continuous recording session
+      setCaptureDeviceName(selectedAudioDevices.output.name || "System default output");
       await invoke<string>("start_system_audio_capture", {
         vadConfig: vadConfig,
         deviceId: deviceId,
@@ -478,7 +506,7 @@ export function useSystemAudio() {
     } finally {
       endAudioTransition();
     }
-  }, [capturing, vadConfig, selectedAudioDevices.output.id, beginAudioTransition, endAudioTransition]);
+  }, [capturing, vadConfig, selectedAudioDevices.output.id, selectedAudioDevices.output.name, beginAudioTransition, endAudioTransition]);
 
   // Ignore current recording (stop without transcription)
   const ignoreContinuousRecording = useCallback(async () => {
@@ -628,6 +656,7 @@ export function useSystemAudio() {
           : null;
 
       // Start capture with VAD config
+      setCaptureDeviceName(selectedAudioDevices.output.name || "System default output");
       await invoke<string>("start_system_audio_capture", {
         vadConfig: vadConfig,
         deviceId: deviceId,
@@ -641,7 +670,7 @@ export function useSystemAudio() {
     } finally {
       endAudioTransition();
     }
-  }, [vadConfig, selectedAudioDevices.output.id, beginAudioTransition, endAudioTransition]);
+  }, [vadConfig, selectedAudioDevices.output.id, selectedAudioDevices.output.name, beginAudioTransition, endAudioTransition]);
 
   const stopCapture = useCallback(async () => {
     if (!beginAudioTransition()) return;
@@ -825,10 +854,11 @@ export function useSystemAudio() {
   const updateVadConfiguration = useCallback(async (config: VadConfig) => {
     if (!beginAudioTransition()) return;
     try {
-      // The native task holds a config snapshot. Updating it in memory cannot
-      // change a running VAD task into a manual task.
+      // The native task holds a config snapshot. Restart automatic capture for
+      // every setting change so sensitivity and silence controls take effect.
       const modeChanged = config.enabled !== vadConfig.enabled;
-      if (capturing && modeChanged) {
+      const restartCapture = capturing && (modeChanged || vadConfig.enabled);
+      if (restartCapture) {
         await invoke("stop_system_audio_capture");
         recordingRef.current = false;
         setIsRecordingInContinuousMode(false);
@@ -838,7 +868,8 @@ export function useSystemAudio() {
       setVadConfig(config);
       setIsContinuousMode(capturing && !config.enabled);
       safeLocalStorage.setItem("vad_config", JSON.stringify(config));
-      if (capturing && modeChanged && config.enabled) {
+      if (restartCapture && config.enabled) {
+        setCaptureDeviceName(selectedAudioDevices.output.name || "System default output");
         await invoke("start_system_audio_capture", {
           vadConfig: config,
           deviceId: selectedAudioDevices.output.id === "default" ? null : selectedAudioDevices.output.id,
@@ -850,7 +881,7 @@ export function useSystemAudio() {
     } finally {
       endAudioTransition();
     }
-  }, [capturing, vadConfig.enabled, selectedAudioDevices.output.id, beginAudioTransition, endAudioTransition]);
+  }, [capturing, vadConfig.enabled, selectedAudioDevices.output.id, selectedAudioDevices.output.name, beginAudioTransition, endAudioTransition]);
 
   // Keyboard arrow key support for scrolling (local shortcut)
   useEffect(() => {
@@ -933,6 +964,9 @@ export function useSystemAudio() {
 
   return {
     capturing,
+    captureActive,
+    audioLevel,
+    captureDeviceName,
     isAudioTransitioning,
     isProcessing,
     isAIProcessing,

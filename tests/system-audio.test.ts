@@ -15,9 +15,10 @@ const mocks = vi.hoisted(() => ({
     selectedAIProvider: { provider: "test-ai" },
     allAiProviders: [{ id: "test-ai" }],
     systemPrompt: "Test",
-    selectedAudioDevices: { output: { id: "default" } },
+    selectedAudioDevices: { output: { id: "default", name: "Test speakers" } },
   },
   fetchSTT: vi.fn(),
+  fetchAIResponse: vi.fn(),
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("@tauri-apps/api/event", () => ({
@@ -33,7 +34,7 @@ vi.mock("../src/hooks", () => ({
   useGlobalShortcuts: () => mocks.shortcuts,
 }));
 vi.mock("@/contexts", () => ({ useApp: () => mocks.context }));
-vi.mock("@/lib/functions", () => ({ fetchSTT: mocks.fetchSTT, fetchAIResponse: vi.fn() }));
+vi.mock("@/lib/functions", () => ({ fetchSTT: mocks.fetchSTT, fetchAIResponse: mocks.fetchAIResponse }));
 vi.mock("@/lib", () => ({
   safeLocalStorage: {
     getItem: (key: string) => localStorage.getItem(key),
@@ -64,6 +65,7 @@ beforeEach(async () => {
   mocks.listeners.clear();
   mocks.invoke.mockReset();
   mocks.fetchSTT.mockReset();
+  mocks.fetchAIResponse.mockReset();
   active = false;
   captureMode = undefined;
   holdStart = undefined;
@@ -72,6 +74,7 @@ beforeEach(async () => {
     if (command === "start_system_audio_capture") {
       if (active) throw "Capture already running";
       active = true;
+      emit("capture-started", 48000);
       captureMode = args.vadConfig.enabled;
       await holdStart;
       if (!captureMode) emit("continuous-recording-start");
@@ -181,4 +184,42 @@ it("recovers from empty recording and allows the next manual recording", async (
 it("removes asynchronous event listeners on unmount", async () => {
   await act(async () => root.unmount());
   expect([...mocks.listeners.values()].reduce((sum, callbacks) => sum + callbacks.size, 0)).toBe(0);
+});
+
+it("applies sensitivity changes to the active native capture without changing modes", async () => {
+  await act(async () => audio.startCapture());
+  mocks.invoke.mockClear();
+  const config = { ...audio.vadConfig, sensitivity_rms: 0.0015, peak_threshold: 0.004 };
+  await act(async () => audio.updateVadConfiguration(config));
+  expect(mocks.invoke.mock.calls.map(([name]) => name)).toEqual([
+    "stop_system_audio_capture", "update_vad_config", "start_system_audio_capture",
+  ]);
+  expect(mocks.invoke).toHaveBeenLastCalledWith("start_system_audio_capture", {
+    vadConfig: config, deviceId: null,
+  });
+  expect(audio.captureActive).toBe(true);
+  expect(audio.error).toBe("");
+});
+
+it("shows real signal levels and clears them when native capture stops", async () => {
+  await act(async () => audio.startCapture());
+  const level = { rms: 0.002, peak: 0.006, samples: 9600 };
+  await act(async () => emit("system-audio-level", level));
+  expect(audio.audioLevel).toEqual(level);
+  expect(audio.captureDeviceName).toBe("Test speakers");
+  expect(mocks.fetchSTT).not.toHaveBeenCalled();
+  await act(async () => emit("capture-stopped"));
+  expect(audio.captureActive).toBe(false);
+  expect(audio.audioLevel).toBe(null);
+});
+
+it("does not send an empty transcript to the answer model", async () => {
+  await act(async () => audio.startCapture());
+  mocks.fetchSTT.mockResolvedValue("");
+  await act(async () => emit("speech-detected", "AQID"));
+  expect(mocks.fetchSTT).toHaveBeenCalledOnce();
+  expect(mocks.fetchAIResponse).not.toHaveBeenCalled();
+  expect(audio.lastTranscription).toBe("");
+  expect(audio.error).toContain("No speech was recognized");
+  expect(audio.isProcessing).toBe(false);
 });

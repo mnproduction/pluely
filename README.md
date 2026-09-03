@@ -16,6 +16,8 @@ Requests go directly to your selected provider. You pay that provider for API us
 
 ## Local features
 
+Version 0.1.14 adds a live System Audio input meter and the name of the output selected when capture started. Match that output to your meeting's Speakers setting; headsets with separate Chat and Game endpoints expose different devices. If you change the selected output during capture, stop and restart System Audio to use it. Auto-detect sensitivity changes now restart capture with the updated settings. Use **Settings > Quiet calls** for low-volume output, or **Manual > Start Recording > Stop & Send** to test transcription without voice-activity detection. Empty STT results show a diagnostic instead of sending the words "No transcription found" to the answer model.
+
 Version 0.1.13 extends **Hide Icon from Dock/Taskbar** on Windows to use [native utility windows](https://learn.microsoft.com/en-us/windows/win32/winmsg/extended-window-styles) (`WS_EX_TOOLWINDOW`) for both Assistant and Dashboard. The panels stay visible and interactive, while their taskbar and Alt+Tab entries are suppressed. Turning the setting off restores regular application windows. The policy is reapplied after reopening, resizing, maximizing/restoring, and changing Always on Top. Open Dashboard from the panel or by launching the executable again when its taskbar entry is hidden.
 
 This mode does not remove a process from Task Manager. Windows decides whether it groups the running application under Apps or Background processes; that grouping is not guaranteed by the documented window-style API and still needs a manual check on the target Windows version.

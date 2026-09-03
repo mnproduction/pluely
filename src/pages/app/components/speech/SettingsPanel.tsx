@@ -31,21 +31,31 @@ import { cn } from "@/lib/utils";
 const SENSITIVITY_PRESETS = {
   low: {
     sensitivity_rms: 0.015,
+    peak_threshold: 0.035,
     noise_gate_threshold: 0.005,
     label: "Low",
     description: "Only picks up clear, loud speech",
   },
   normal: {
     sensitivity_rms: 0.012,
+    peak_threshold: 0.035,
     noise_gate_threshold: 0.003,
     label: "Normal",
     description: "Balanced for typical conversations",
   },
   high: {
     sensitivity_rms: 0.008,
+    peak_threshold: 0.025,
     noise_gate_threshold: 0.002,
     label: "High",
     description: "Picks up quieter speech",
+  },
+  quiet: {
+    sensitivity_rms: 0.0015,
+    peak_threshold: 0.004,
+    noise_gate_threshold: 0.0003,
+    label: "Quiet calls",
+    description: "For low-volume headset audio. May also pick up background sounds.",
   },
 } as const;
 
@@ -78,9 +88,10 @@ export const SettingsPanel = ({
   const getCurrentPreset = (): SensitivityPreset | "custom" => {
     for (const [key, preset] of Object.entries(SENSITIVITY_PRESETS)) {
       if (
-        Math.abs(vadConfig.sensitivity_rms - preset.sensitivity_rms) < 0.001 &&
+        Math.abs(vadConfig.sensitivity_rms - preset.sensitivity_rms) < 0.00001 &&
+        Math.abs(vadConfig.peak_threshold - preset.peak_threshold) < 0.00001 &&
         Math.abs(vadConfig.noise_gate_threshold - preset.noise_gate_threshold) <
-          0.001
+          0.00001
       ) {
         return key as SensitivityPreset;
       }
@@ -95,6 +106,7 @@ export const SettingsPanel = ({
     onUpdateVadConfig({
       ...vadConfig,
       sensitivity_rms: presetValues.sensitivity_rms,
+      peak_threshold: presetValues.peak_threshold,
       noise_gate_threshold: presetValues.noise_gate_threshold,
     });
   };

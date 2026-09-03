@@ -10,6 +10,15 @@ The fork survey collected 525 unique GitHub fork records and sampled up to five 
 
 Closer source inspection included DrewWalkup/nyx, b4sjoo/jarvis, SalosV/pluely, RedBeggins/Freely, Badbird3/pluely-fork, shinramenisbae/pluely, and lambdaflows/freely. Some remove licensing/telemetry, but none of these inspected snapshots fixes the Tauri/CSP baseline. The additional interview, document, or agent functionality would require more review. The minimal upstream base was selected for a controlled patch set.
 
+## System audio diagnostics, 0.1.14 (2026-09-03)
+
+- A hardware check of the pre-patch capture path successfully received a quiet generated tone on the selected JBL Chat output (48 kHz). It verified the tone's frequency in the captured samples, rather than merely checking that a capture task stayed running. This rules out a general failure of that capture path during the check; it does not establish what happened during the user's earlier Meet session.
+- Both automatic and manual capture now emit RMS, peak, and sample-count metrics every 200 ms, before noise gating. The panel shows a real input meter and the output selected at capture start. It clears the meter when native capture stops and prompts for a restart if a different output was selected while recording. These diagnostics do not write audio to disk or send it to a provider.
+- Changing automatic sensitivity now stops and restarts the native capture with the new configuration, fixing the previous stale configuration snapshot. The optional Quiet calls preset covers lower signal levels. Empty STT recognition remains empty and is not sent to the answer model as the fabricated text "No transcription found".
+- All 35 frontend tests and six default native tests pass. New checks cover applying sensitivity to active capture, clearing real signal state on stop, OpenAI Whisper multipart fields, and empty recognition. Three hardware tests are ignored by default; the new selected-output tone test was explicitly run and passed.
+- An isolated Windows release build (`com.mnproduction.pluely.audio-test`) passed native-to-UI checks for the exact output label, live signal metrics, applying Quiet calls during capture, and manual start/discard. The panel received 19 level updates with 173,429 samples during the check. A WebView screenshot was inspected for layout. The isolated app was then quit normally.
+- The tests used an empty provider profile, made no STT or answer-model requests, and did not inspect or modify production keys, history, or running app processes. The user's actual Meet-to-Whisper transcription still needs a user retest with the new visible input meter.
+
 ## Windows utility windows, 0.1.13 (2026-09-03)
 
 - Hide Icon now applies the documented `WS_EX_TOOLWINDOW` style and clears `WS_EX_APPWINDOW` on this application's Assistant and Dashboard windows. Disabling it restores regular app-window styles. Other extended styles are preserved. No other application's windows or process enumeration are modified.

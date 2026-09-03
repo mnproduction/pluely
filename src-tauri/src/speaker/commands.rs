@@ -43,6 +43,41 @@ impl Default for VadConfig {
     }
 }
 
+#[derive(Clone, Serialize, Default)]
+struct AudioLevel {
+    rms: f64,
+    peak: f32,
+    samples: usize,
+}
+
+#[derive(Default)]
+struct AudioMeter {
+    sum_squares: f64,
+    peak: f32,
+    samples: usize,
+}
+
+impl AudioMeter {
+    fn push(&mut self, sample: f32) {
+        if sample.is_finite() {
+            self.sum_squares += (sample as f64).powi(2);
+            self.peak = self.peak.max(sample.abs());
+            self.samples += 1;
+        }
+    }
+
+    fn emit(&mut self, app: &AppHandle) {
+        let level = AudioLevel {
+            rms: (self.sum_squares / self.samples.max(1) as f64).sqrt(),
+            peak: self.peak,
+            samples: self.samples,
+        };
+        // Send signal metrics only, before the noise gate. No audio is stored.
+        let _ = app.emit("system-audio-level", level);
+        *self = Self::default();
+    }
+}
+
 #[tauri::command]
 pub async fn start_system_audio_capture(
     app: AppHandle,
@@ -138,8 +173,25 @@ async fn run_vad_capture(
     let mut silence_chunks = 0;
     let mut speech_chunks = 0;
     let max_samples = sr as usize * 30; // 30s safety cap per utterance
+    let mut meter = AudioMeter::default();
+    let mut meter_tick = tokio::time::interval(Duration::from_millis(200));
 
-    while let Some(sample) = stream.next().await {
+    loop {
+        let sample = tokio::select! {
+            biased;
+            _ = meter_tick.tick() => {
+                meter.emit(&app);
+                continue;
+            }
+            sample = stream.next() => match sample {
+                Some(sample) => sample,
+                None => {
+                    let _ = app.emit("audio-encoding-error", "The audio device stopped. Restart System Audio with an available output device.");
+                    break;
+                }
+            }
+        };
+        meter.push(sample);
         buffer.push_back(sample);
 
         // Process in fixed chunks for VAD analysis
@@ -266,6 +318,8 @@ async fn run_continuous_capture(
     let deadline = tokio::time::sleep(max_duration);
     tokio::pin!(deadline);
     let mut progress = tokio::time::interval(Duration::from_secs(1));
+    let mut meter = AudioMeter::default();
+    let mut meter_tick = tokio::time::interval(Duration::from_millis(200));
 
     // Emit recording started
     let _ = app.emit(
@@ -278,12 +332,14 @@ async fn run_continuous_capture(
             biased;
             _ = &mut manual_stop => break,
             _ = &mut deadline => break,
+            _ = meter_tick.tick() => meter.emit(&app),
             _ = progress.tick() => {
                 let _ = app.emit("recording-progress", start_time.elapsed().as_secs());
             }
             sample_opt = stream.next() => {
                 match sample_opt {
                     Some(sample) => {
+                        meter.push(sample);
                         audio_buffer.push(sample);
 
                         // Check size limit (safety)
