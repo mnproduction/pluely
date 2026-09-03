@@ -82,6 +82,15 @@ export const SystemAudio = (props: useSystemAudioType) => {
 
   const isVadMode = vadConfig.enabled;
   const hasResponse = lastAIResponse || isAIProcessing;
+  const hasPanelContent = Boolean(
+    capturing ||
+      setupRequired ||
+      error ||
+      isProcessing ||
+      isAIProcessing ||
+      lastTranscription ||
+      lastAIResponse
+  );
 
   // Keyboard shortcut for Cmd+K to toggle view mode
   useEffect(() => {
@@ -203,7 +212,7 @@ export const SystemAudio = (props: useSystemAudioType) => {
         </Button>
       </PopoverTrigger>
 
-      {(capturing || setupRequired || error) && (
+      {hasPanelContent && (
         <PopoverContent
           align="end"
           side="bottom"
