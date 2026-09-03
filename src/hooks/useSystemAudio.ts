@@ -680,7 +680,8 @@ export function useSystemAudio() {
       // Stop the audio capture
       await invoke<string>("stop_system_audio_capture");
 
-      // Reset ALL states
+      // Stop capture without deleting the completed transcript or answer.
+      // Results are cleared only by a new conversation or a replacement response.
       setCapturing(false);
       recordingRef.current = false;
       setIsProcessing(false);
@@ -688,10 +689,7 @@ export function useSystemAudio() {
       setIsContinuousMode(false);
       setIsRecordingInContinuousMode(false);
       setRecordingProgress(0);
-      setLastTranscription("");
-      setLastAIResponse("");
-      setError("");
-      setIsPopoverOpen(false);
+      setIsPopoverOpen(Boolean(lastTranscription || lastAIResponse || error));
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       setError(`Failed to stop capture: ${errorMessage}`);
@@ -699,7 +697,7 @@ export function useSystemAudio() {
     } finally {
       endAudioTransition();
     }
-  }, [beginAudioTransition, endAudioTransition]);
+  }, [beginAudioTransition, endAudioTransition, lastTranscription, lastAIResponse, error]);
 
   // Manual stop for continuous recording
   const manualStopAndSend = useCallback(async () => {

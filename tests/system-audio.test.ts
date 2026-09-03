@@ -236,6 +236,17 @@ it("displays LLM chunks after transcription and passes cancellation to the reque
   expect(mocks.fetchAIResponse).toHaveBeenCalledWith(expect.objectContaining({ source: "system", signal: expect.any(AbortSignal) }));
 });
 
+it("keeps a completed transcript and answer visible after stopping capture", async () => {
+  mocks.fetchSTT.mockResolvedValue("Test transcript");
+  mocks.fetchAIResponse.mockImplementation(async function* () { yield "Visible answer"; });
+  await act(async () => audio.startCapture());
+  await act(async () => emit("speech-detected", "AQID"));
+  await act(async () => audio.stopCapture());
+  expect(audio.lastTranscription).toBe("Test transcript");
+  expect(audio.lastAIResponse).toBe("Visible answer");
+  expect(audio.isPopoverOpen).toBe(true);
+});
+
 it("shows a visible error when transcription succeeds but the LLM yields no text", async () => {
   mocks.fetchSTT.mockResolvedValue("Test transcript");
   mocks.fetchAIResponse.mockImplementation(async function* () {});

@@ -167,7 +167,7 @@ struct LlmRecord {
     update: LlmUpdate,
 }
 
-#[derive(Clone, Default, Serialize, Deserialize)]
+#[derive(Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PipelineInfo {
     panel_open: bool,
@@ -181,6 +181,13 @@ pub struct PipelineInfo {
     transcript_chars: u64,
     response_chars: u64,
     has_error: bool,
+}
+
+#[derive(Clone, Serialize)]
+struct PipelineRecord {
+    updated_at_ms: u64,
+    #[serde(flatten)]
+    update: PipelineInfo,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -216,6 +223,7 @@ struct Snapshot {
     llm_requests: VecDeque<LlmRecord>,
     pipeline: PipelineInfo,
     pipeline_updated_at_ms: u64,
+    pipeline_history: VecDeque<PipelineRecord>,
     events: VecDeque<Event>,
 }
 
@@ -231,6 +239,7 @@ impl Default for Snapshot {
             llm_requests: VecDeque::new(),
             pipeline: PipelineInfo::default(),
             pipeline_updated_at_ms: 0,
+            pipeline_history: VecDeque::new(),
             events: VecDeque::new(),
         }
     }
@@ -321,6 +330,22 @@ impl Diagnostics {
                 state.llm_requests.pop_front();
             }
             state.at_ms = now_ms();
+        }
+    }
+
+    fn record_pipeline(&self, update: PipelineInfo) {
+        if let Ok(mut snapshot) = self.snapshot.lock() {
+            if snapshot.pipeline != update {
+                snapshot.pipeline_history.push_back(PipelineRecord {
+                    updated_at_ms: now_ms(),
+                    update: update.clone(),
+                });
+                while snapshot.pipeline_history.len() > 100 {
+                    snapshot.pipeline_history.pop_front();
+                }
+            }
+            snapshot.pipeline = update;
+            snapshot.pipeline_updated_at_ms = now_ms();
         }
     }
 
@@ -578,10 +603,7 @@ pub fn diagnostics_record_pipeline(
     if window.label() != "main" {
         return Err("Pipeline diagnostics require the assistant window".into());
     }
-    if let Ok(mut snapshot) = state.snapshot.lock() {
-        snapshot.pipeline = update;
-        snapshot.pipeline_updated_at_ms = now_ms();
-    }
+    state.record_pipeline(update);
     Ok(())
 }
 
@@ -678,5 +700,12 @@ mod tests {
             serde_json::json!({"response":"private text"})
         )
         .is_err());
+        for index in 0..500 {
+            diag.record_pipeline(PipelineInfo {
+                panel_open: index % 2 == 0,
+                ..Default::default()
+            });
+        }
+        assert_eq!(diag.snapshot.lock().unwrap().pipeline_history.len(), 100);
     }
 }

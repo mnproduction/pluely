@@ -16,6 +16,8 @@ Requests go directly to your selected provider. You pay that provider for API us
 
 ## Local features
 
+Version 0.1.17 keeps completed System Audio transcripts and LLM answers visible after capture is stopped. The diagnostic gateway also retains the last 100 changes to panel/pipeline state, so a later snapshot can explain when a result was shown or cleared.
+
 Version 0.1.16 extends local diagnostics to the STT-to-LLM pipeline: panel state and heartbeat, configured-provider flags, request stages, HTTP/error categories, model families, time to first text, response character/chunk counts, cancellation and timeouts. No conversation content or credentials are included. Empty LLM responses and streaming errors now display an error; final SSE events without a trailing newline are retained. System Audio passes cancellation to the provider and distinguishes transcription from answer generation. LLM requests have a 120-second deadline.
 
 Version 0.1.15 replaces the toolbar's simulated waveform with real native output levels. A silent or stopped capture shows zero; the microphone recorder still measures its actual microphone stream. STT timeouts now abort the underlying HTTP request.
