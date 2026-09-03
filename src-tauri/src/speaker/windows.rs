@@ -168,10 +168,13 @@ impl SpeakerInput {
             waker_state,
             capture_thread: Some(capture_thread),
             actual_sample_rate: 0,
+            device_name: String::new(),
         };
-        stream.actual_sample_rate = init_rx
+        let (sample_rate, device_name) = init_rx
             .recv_timeout(Duration::from_secs(5))
             .map_err(|e| anyhow::anyhow!("Audio initialization did not complete: {}", e))??;
+        stream.actual_sample_rate = sample_rate;
+        stream.device_name = device_name;
         Ok(stream)
     }
 }
@@ -187,6 +190,7 @@ pub struct SpeakerStream {
     waker_state: Arc<Mutex<WakerState>>,
     capture_thread: Option<thread::JoinHandle<()>>,
     actual_sample_rate: u32,
+    device_name: String,
 }
 
 impl SpeakerStream {
@@ -194,10 +198,14 @@ impl SpeakerStream {
         self.actual_sample_rate
     }
 
+    pub fn device_name(&self) -> &str {
+        &self.device_name
+    }
+
     fn capture_audio_loop(
         sample_queue: Arc<Mutex<VecDeque<f32>>>,
         waker_state: Arc<Mutex<WakerState>>,
-        init_tx: mpsc::Sender<Result<u32>>,
+        init_tx: mpsc::Sender<Result<(u32, String)>>,
         device_id: Option<String>,
     ) -> Result<()> {
         wasapi::initialize_mta().ok()?;
@@ -231,12 +239,15 @@ impl SpeakerStream {
 
             audio_client.start_stream()?;
 
-            Ok((h_event, render_client, actual_rate))
+            let device_name = device
+                .get_friendlyname()
+                .unwrap_or_else(|_| "System output".into());
+            Ok((h_event, render_client, actual_rate, device_name))
         })();
 
         match init_result {
-            Ok((h_event, render_client, sample_rate)) => {
-                let _ = init_tx.send(Ok(sample_rate));
+            Ok((h_event, render_client, sample_rate, device_name)) => {
+                let _ = init_tx.send(Ok((sample_rate, device_name)));
 
                 loop {
                     {

@@ -285,41 +285,19 @@ export function useSystemAudio() {
             }
             const audioBlob = new Blob([bytes], { type: "audio/wav" });
 
-            if (!selectedSttProvider.provider) {
-              setError("No speech provider selected.");
-              return;
-            }
-
             const providerConfig = allSttProviders.find(
               (p) => p.id === selectedSttProvider.provider
             );
 
-            if (!providerConfig) {
-              setError("Speech provider config not found.");
-              return;
-            }
-
             setIsProcessing(true);
 
-            // Add timeout wrapper for STT request (30 seconds)
-            const sttPromise = fetchSTT({
-              provider: providerConfig,
-              selectedProvider: selectedSttProvider,
-              audio: audioBlob,
-            });
-
-            const timeoutPromise = new Promise<string>((_, reject) => {
-              setTimeout(
-                () => reject(new Error("Speech transcription timed out (30s)")),
-                30000
-              );
-            });
-
             try {
-              const transcription = await Promise.race([
-                sttPromise,
-                timeoutPromise,
-              ]);
+              const transcription = await fetchSTT({
+                provider: providerConfig,
+                selectedProvider: selectedSttProvider,
+                audio: audioBlob,
+                source: "system",
+              });
 
               if (transcription.trim()) {
                 setLastTranscription(transcription);

@@ -73,6 +73,13 @@ impl AudioMeter {
             samples: self.samples,
         };
         // Send signal metrics only, before the noise gate. No audio is stored.
+        app.state::<crate::diagnostics::Diagnostics>()
+            .capture(|capture| {
+                capture.rms = level.rms;
+                capture.peak = level.peak;
+                capture.samples_received += level.samples as u64;
+                capture.last_level_at_ms = crate::diagnostics::now_ms();
+            });
         let _ = app.emit("system-audio-level", level);
         *self = Self::default();
     }
@@ -105,13 +112,17 @@ pub async fn start_system_audio_capture(
     }
 
     let input = SpeakerInput::new_with_device(device_id).map_err(|e| {
+        app.state::<crate::diagnostics::Diagnostics>()
+            .event("capture_start_failed");
         error!("Failed to create speaker input: {}", e);
         format!("Failed to access system audio: {}", e)
     })?;
 
-    let stream = input
-        .stream()
-        .map_err(|e| format!("Failed to start system audio: {}", e))?;
+    let stream = input.stream().map_err(|e| {
+        app.state::<crate::diagnostics::Diagnostics>()
+            .event("capture_start_failed");
+        format!("Failed to start system audio: {}", e)
+    })?;
     let sr = stream.sample_rate();
 
     // Validate sample rate
@@ -131,6 +142,18 @@ pub async fn start_system_audio_capture(
         .clone();
 
     // Emit capture started event
+    app.state::<crate::diagnostics::Diagnostics>()
+        .capture(|capture| {
+            *capture = crate::diagnostics::CaptureInfo {
+                active: true,
+                device_name: stream.device_name().chars().take(200).collect(),
+                sample_rate: sr,
+                config: Some(vad_config.clone()),
+                ..Default::default()
+            };
+        });
+    app.state::<crate::diagnostics::Diagnostics>()
+        .event("capture_started");
     let _ = app_clone.emit("capture-started", sr);
 
     let continuous = !vad_config.enabled;
@@ -147,6 +170,17 @@ pub async fn start_system_audio_capture(
         },
         continuous.then_some(stop_sender),
         move || {
+            stopped_app
+                .state::<crate::diagnostics::Diagnostics>()
+                .capture(|capture| {
+                    capture.active = false;
+                    capture.rms = 0.0;
+                    capture.peak = 0.0;
+                    capture.speech_active = false;
+                });
+            stopped_app
+                .state::<crate::diagnostics::Diagnostics>()
+                .event("capture_stopped");
             if continuous {
                 let _ = stopped_app.emit("continuous-recording-stopped", ());
             }
@@ -186,6 +220,7 @@ async fn run_vad_capture(
             sample = stream.next() => match sample {
                 Some(sample) => sample,
                 None => {
+                    app.state::<crate::diagnostics::Diagnostics>().event("capture_device_ended");
                     let _ = app.emit("audio-encoding-error", "The audio device stopped. Restart System Audio with an available output device.");
                     break;
                 }
@@ -219,6 +254,8 @@ async fn run_vad_capture(
                     speech_buffer.extend(pre_speech.drain(..));
 
                     let _ = app.emit("speech-start", ());
+                    app.state::<crate::diagnostics::Diagnostics>()
+                        .event("speech_started");
                 }
 
                 speech_chunks += 1;
@@ -231,6 +268,7 @@ async fn run_vad_capture(
                     if let Ok(b64) = samples_to_wav_b64(sr, &normalized_buffer) {
                         // let duration = speech_buffer.len() as f32 / sr as f32;
                         let _ = app.emit("speech-detected", b64);
+                        record_segment(&app, sr, normalized_buffer.len());
                     }
                     speech_buffer.clear();
                     in_speech = false;
@@ -263,11 +301,18 @@ async fn run_vad_capture(
                             if let Ok(b64) = samples_to_wav_b64(sr, &normalized_buffer) {
                                 // let duration = speech_buffer.len() as f32 / sr as f32;
                                 let _ = app.emit("speech-detected", b64);
+                                record_segment(&app, sr, normalized_buffer.len());
                             } else {
                                 error!("Failed to encode speech to WAV");
                                 let _ = app.emit("audio-encoding-error", "Failed to encode speech");
+                                app.state::<crate::diagnostics::Diagnostics>()
+                                    .event("audio_encoding_failed");
                             }
                         } else {
+                            app.state::<crate::diagnostics::Diagnostics>()
+                                .capture(|capture| capture.segments_discarded += 1);
+                            app.state::<crate::diagnostics::Diagnostics>()
+                                .event("speech_too_short");
                             let _ = app.emit(
                                 "speech-discarded",
                                 "Audio too short (likely background noise)",
@@ -295,6 +340,12 @@ async fn run_vad_capture(
                     }
                 }
             }
+            app.state::<crate::diagnostics::Diagnostics>()
+                .capture(|capture| {
+                    capture.speech_active = in_speech;
+                    capture.speech_chunks = speech_chunks;
+                    capture.silence_chunks = silence_chunks;
+                });
         }
     }
 }
@@ -369,16 +420,31 @@ async fn run_continuous_capture(
         match samples_to_wav_b64(sr, &cleaned_audio) {
             Ok(b64) => {
                 let _ = app.emit("speech-detected", b64);
+                record_segment(&app, sr, cleaned_audio.len());
             }
             Err(e) => {
+                app.state::<crate::diagnostics::Diagnostics>()
+                    .event("audio_encoding_failed");
                 error!("Failed to encode continuous audio: {}", e);
                 let _ = app.emit("audio-encoding-error", e);
             }
         }
     } else {
+        app.state::<crate::diagnostics::Diagnostics>()
+            .event("no_audio_packets");
         warn!("No audio captured in continuous mode");
         let _ = app.emit("audio-encoding-error", "No audio recorded");
     }
+}
+
+fn record_segment(app: &AppHandle, sample_rate: u32, samples: usize) {
+    app.state::<crate::diagnostics::Diagnostics>()
+        .capture(|capture| {
+            capture.segments_emitted += 1;
+            capture.last_segment_duration_ms = samples as u64 * 1000 / sample_rate.max(1) as u64;
+        });
+    app.state::<crate::diagnostics::Diagnostics>()
+        .event("segment_emitted");
 }
 
 // Apply noise gate

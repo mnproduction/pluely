@@ -27,7 +27,7 @@ fn check_window(window: &WebviewWindow) -> Result<(), String> {
 }
 
 #[cfg(windows)]
-fn protect(input: &[u8], encrypt: bool) -> Result<Vec<u8>, String> {
+pub(crate) fn protect(input: &[u8], encrypt: bool) -> Result<Vec<u8>, String> {
     use std::ptr::{null, null_mut};
     use windows_sys::Win32::{
         Foundation::LocalFree,
@@ -85,7 +85,7 @@ fn protect(input: &[u8], encrypt: bool) -> Result<Vec<u8>, String> {
 }
 
 #[cfg(not(windows))]
-fn protect(_: &[u8], _: bool) -> Result<Vec<u8>, String> {
+pub(crate) fn protect(_: &[u8], _: bool) -> Result<Vec<u8>, String> {
     Err(
         "This build uses Windows DPAPI. Provider storage on other platforms is not implemented."
             .into(),

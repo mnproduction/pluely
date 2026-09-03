@@ -24,7 +24,7 @@ export const InputLevel = ({
     : !active ? (isVadMode ? "Capture stopped" : "Ready to record")
     : !level ? "Checking audio..."
     : !hasSignal ? "No sound detected"
-    : isVadMode ? "Sound received. Waiting for a speech pause."
+    : isVadMode ? "Sound received"
     : "Recording system audio";
 
   return (

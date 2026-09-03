@@ -24,6 +24,7 @@ import { PermissionFlow } from "./PermissionFlow";
 import { QuickActions } from "./QuickActions";
 import { Warning } from "./Warning";
 import { InputLevel } from "./InputLevel";
+import { DiagnosticsPanel } from "./DiagnosticsPanel";
 import { useSystemAudioType } from "@/hooks";
 import { useApp } from "@/contexts";
 import { cn } from "@/lib/utils";
@@ -165,7 +166,7 @@ export const SystemAudio = (props: useSystemAudioType) => {
       return <AlertCircleIcon className="text-red-500" />;
     if (isProcessing) return <LoaderIcon className="animate-spin" />;
     if (capturing)
-      return <AudioLinesIcon className="text-green-500 animate-pulse" />;
+      return <AudioLinesIcon className={captureActive ? "text-green-500" : "text-muted-foreground"} />;
     return <HeadphonesIcon />;
   };
 
@@ -385,6 +386,7 @@ export const SystemAudio = (props: useSystemAudioType) => {
                     />
 
                     {/* Help/Keyboard Shortcuts */}
+                    <DiagnosticsPanel />
                     <Warning isVadMode={isVadMode} />
                   </>
                 )}

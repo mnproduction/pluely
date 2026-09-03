@@ -142,6 +142,13 @@ impl Stream for SpeakerStream {
 }
 
 impl SpeakerStream {
+    pub fn device_name(&self) -> &str {
+        #[cfg(target_os = "windows")]
+        return self.inner.device_name();
+        #[cfg(not(target_os = "windows"))]
+        return "Selected system output";
+    }
+
     // Gets the sample rate (e.g., 16000 Hz on stub, variable on real impls).
     pub fn sample_rate(&self) -> u32 {
         #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]

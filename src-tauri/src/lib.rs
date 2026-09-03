@@ -1,7 +1,8 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-mod private_store;
 mod capture;
 mod db;
+mod diagnostics;
+mod private_store;
 mod shortcuts;
 mod window;
 use std::sync::Mutex;
@@ -29,7 +30,12 @@ fn get_app_version() -> String {
 pub fn run() {
     let builder = tauri::Builder::default();
     #[cfg(desktop)]
-    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+        if args.iter().any(|arg| arg == "--diagnostics") {
+            if let Err(error) = diagnostics::start_for_app(app) {
+                eprintln!("Cannot start local diagnostics: {error}");
+            }
+        }
         // Keep the existing instance, including its provider/session state.
         if let Err(error) = window::show_dashboard_window(app) {
             eprintln!("Failed to show the existing instance: {}", error);
@@ -49,6 +55,7 @@ pub fn run() {
         .manage(shortcuts::RegisteredShortcuts::default())
         .manage(shortcuts::AppIconVisibility::default())
         .manage(private_store::PrivateStore::default())
+        .manage(diagnostics::Diagnostics::default())
         .manage(shortcuts::MoveWindowState::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
@@ -60,6 +67,10 @@ pub fn run() {
     let mut builder = builder
         .invoke_handler(tauri::generate_handler![
             get_app_version,
+            diagnostics::diagnostics_start,
+            diagnostics::diagnostics_stop,
+            diagnostics::diagnostics_status,
+            diagnostics::diagnostics_record_stt,
             private_store::private_store_load,
             private_store::private_store_set,
             window::set_window_height,
@@ -90,6 +101,11 @@ pub fn run() {
             speaker::get_output_devices,
         ])
         .setup(|app| {
+            if std::env::args().any(|arg| arg == "--diagnostics") {
+                if let Err(error) = diagnostics::start_for_app(app.handle()) {
+                    eprintln!("Cannot start local diagnostics: {error}");
+                }
+            }
             // Setup main window positioning
             window::setup_main_window(app).expect("Failed to setup main window");
             #[cfg(target_os = "macos")]
@@ -179,8 +195,13 @@ pub fn run() {
     }
 
     builder
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                app.state::<diagnostics::Diagnostics>().stop();
+            }
+        });
 }
 
 #[cfg(target_os = "macos")]

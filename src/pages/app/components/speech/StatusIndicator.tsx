@@ -6,6 +6,8 @@ type Props = {
   isProcessing: boolean;
   isAIProcessing: boolean;
   capturing: boolean;
+  captureActive: boolean;
+  hasSignal: boolean;
 };
 
 export const StatusIndicator = ({
@@ -14,6 +16,8 @@ export const StatusIndicator = ({
   isProcessing,
   isAIProcessing,
   capturing,
+  captureActive,
+  hasSignal,
 }: Props) => {
   // Don't show anything if not capturing and no error
   if (!capturing && !error && !isProcessing && !isAIProcessing) {
@@ -39,9 +43,9 @@ export const StatusIndicator = ({
           <span className="text-xs font-medium">Transcribing...</span>
         </div>
       ) : capturing ? (
-        <div className="flex items-center gap-2 text-green-600 animate-pulse">
-          <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-          <span className="text-xs font-medium">Listening...</span>
+        <div className={`flex items-center gap-2 ${hasSignal ? "text-green-600" : "text-muted-foreground"}`}>
+          <div className={`w-2 h-2 rounded-full ${hasSignal ? "bg-green-500" : "bg-muted-foreground/40"}`} />
+          <span className="text-xs font-medium">{!captureActive ? "Ready" : hasSignal ? "Audio" : "Silent"}</span>
         </div>
       ) : null}
     </div>

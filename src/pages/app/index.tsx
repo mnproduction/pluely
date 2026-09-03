@@ -46,7 +46,7 @@ const App = () => {
           {systemAudio?.capturing ? (
             <div className="flex flex-row items-center gap-2 justify-between w-full">
               <div className="flex flex-1 items-center gap-2">
-                <AudioVisualizer isRecording={systemAudio?.capturing} />
+                <AudioVisualizer isRecording={systemAudio.captureActive} peak={systemAudio.audioLevel?.peak ?? 0} />
               </div>
               <div className="flex !w-fit items-center gap-2">
                 <StatusIndicator
@@ -55,6 +55,8 @@ const App = () => {
                   isProcessing={systemAudio.isProcessing}
                   isAIProcessing={systemAudio.isAIProcessing}
                   capturing={systemAudio.capturing}
+                  captureActive={systemAudio.captureActive}
+                  hasSignal={systemAudio.captureActive && (systemAudio.audioLevel?.peak ?? 0) > 0.0001}
                 />
               </div>
             </div>

@@ -74,6 +74,7 @@ const AutoSpeechVADInternal = ({
           provider: providerConfig,
           selectedProvider: selectedSttProvider,
           audio: audioBlob,
+          source: "microphone",
         });
 
         if (transcription) {

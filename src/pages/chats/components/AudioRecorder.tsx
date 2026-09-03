@@ -157,6 +157,7 @@ export const AudioRecorder = ({
         provider: provider,
         selectedProvider: selectedSttProvider,
         audio: audioBlob,
+        source: "microphone",
       });
 
       onTranscriptionComplete(text);

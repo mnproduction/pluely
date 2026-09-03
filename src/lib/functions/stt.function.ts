@@ -4,6 +4,7 @@ import {
   blobToBase64,
 } from "./common.function";
 import { providerFetch } from "./provider-fetch";
+import { recordStt, sttMetadata, sttErrorKind, type AudioSource, type SttDiagnostic, type SttStage } from "./diagnostics";
 
 import { TYPE_PROVIDER } from "@/types";
 import curl2Json from "@bany/curl-to-json";
@@ -15,19 +16,38 @@ export interface STTParams {
     variables: Record<string, string>;
   };
   audio: File | Blob;
+  source?: AudioSource;
 }
 
 /**
  * Returns recognized speech only. Empty recognition stays empty; failures throw.
  */
 export async function fetchSTT(params: STTParams): Promise<string> {
-  let warnings: string[] = [];
+  const startedAt = Date.now();
+  const diagnostic: SttDiagnostic = {
+    request_id: crypto.randomUUID(), stage: "invalid_config", ...sttMetadata("", ""),
+    source: params.source ?? "other", audio_bytes: params.audio?.size ?? 0,
+    duration_ms: 0, http_status: null, transcript_chars: null, error_kind: null,
+  };
+  const report = async (stage: SttStage) => {
+    diagnostic.stage = stage;
+    diagnostic.duration_ms = Date.now() - startedAt;
+    await recordStt({ ...diagnostic });
+  };
+  const finish = async (text: string) => {
+    diagnostic.transcript_chars = Array.from(text).length;
+    await report(text ? "succeeded" : "empty");
+    return text;
+  };
+  let failureStage: SttStage = "invalid_config";
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
 
   try {
     const { provider, selectedProvider, audio } = params;
 
-    if (!provider) throw new Error("Provider not provided");
-    if (!selectedProvider) throw new Error("Selected provider not provided");
+    if (!selectedProvider?.provider) throw new Error("No speech provider selected.");
+    if (!provider) throw new Error("Speech provider config not found.");
     if (!audio) throw new Error("Audio file is required");
 
     let curlJson: any;
@@ -44,11 +64,6 @@ export async function fetchSTT(params: STTParams): Promise<string> {
     // Validate audio file
     const file = audio as File;
     if (file.size === 0) throw new Error("Audio file is empty");
-    // maximum size of 10MB
-    // const maxSize = 10 * 1024 * 1024;
-    // if (file.size > maxSize) {
-    //   warnings.push("Audio exceeds 10MB limit");
-    // }
 
     // Build variable map
     const allVariables = {
@@ -156,19 +171,27 @@ export async function fetchSTT(params: STTParams): Promise<string> {
     }
 
 
-    // Send request
+    Object.assign(diagnostic, sttMetadata(url, body instanceof FormData ? body.get("model") : allVariables.MODEL));
+    await report("sending");
+    const controller = new AbortController();
+    timeout = setTimeout(() => { timedOut = true; controller.abort(); }, 30_000);
+    failureStage = "network_error";
+    // Cancel the native HTTP request too, not just the UI's wait.
     let response: Response;
     try {
       response = await providerFetch(url, {
         method: curlJson.method || "POST",
         headers: finalHeaders,
         body: curlJson.method === "GET" ? undefined : body,
+        signal: controller.signal,
       });
     } catch (e) {
       throw new Error(`Network error: ${e instanceof Error ? e.message : e}`);
     }
 
+    diagnostic.http_status = response.status;
     if (!response.ok) {
+      failureStage = "http_error";
       let errText = "";
       try {
         errText = await response.text();
@@ -176,34 +199,38 @@ export async function fetchSTT(params: STTParams): Promise<string> {
       let errMsg: string;
       try {
         const errObj = JSON.parse(errText);
+        diagnostic.error_kind = sttErrorKind(response.status, errObj.error?.code ?? errObj.code);
         errMsg = errObj.message || errText;
       } catch {
+        diagnostic.error_kind = sttErrorKind(response.status, null);
         errMsg = errText || response.statusText;
       }
       throw new Error(`HTTP ${response.status}: ${errMsg}`);
     }
 
+    failureStage = "decode_error";
     const responseText = await response.text();
     let data: any;
     try {
       data = JSON.parse(responseText);
     } catch {
-      return [...warnings, responseText.trim()].filter(Boolean).join("; ");
+      return await finish(responseText.trim());
     }
 
     // Extract transcription
     const rawPath = provider.responseContentPath || "text";
     const path = rawPath.charAt(0).toLowerCase() + rawPath.slice(1);
-    const transcription = (getByPath(data, path) || "").trim();
-
-    if (!transcription) {
-      return "";
-    }
-
-    // Return transcription with any warnings
-    return [...warnings, transcription].filter(Boolean).join("; ");
+    const value = getByPath(data, path);
+    if (value != null && typeof value !== "string") throw new Error("Provider returned an invalid transcription format");
+    return await finish((value || "").trim());
   } catch (err) {
+    if (timedOut) failureStage = "timed_out";
+    if (failureStage === "network_error") diagnostic.error_kind = "network";
+    await report(failureStage);
+    if (timedOut) throw new Error("Speech transcription timed out (30s)");
     const msg = err instanceof Error ? err.message : String(err);
     throw new Error(msg);
+  } finally {
+    clearTimeout(timeout);
   }
 }
