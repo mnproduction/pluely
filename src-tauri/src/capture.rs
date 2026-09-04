@@ -29,6 +29,12 @@ impl HiddenAppWindows {
             windows: Vec::new(),
         };
 
+        // In a debug build the application is intentionally part of captures,
+        // including screenshots initiated by Mira itself.
+        if !crate::window::capture_protection_enabled() {
+            return Ok(hidden);
+        }
+
         for label in ["main", "dashboard"] {
             let Some(window) = app.get_webview_window(label) else {
                 continue;
