@@ -330,6 +330,13 @@ pub struct GatewayStatus {
 }
 
 impl Diagnostics {
+    pub fn is_enabled(&self) -> bool {
+        let session = self.session.lock().unwrap_or_else(|p| p.into_inner());
+        session
+            .as_ref()
+            .is_some_and(|s| !s.task.inner().is_finished() && s.expires_at_ms > now_ms())
+    }
+
     pub fn capture(&self, update: impl FnOnce(&mut CaptureInfo)) {
         if let Ok(mut state) = self.snapshot.lock() {
             update(&mut state.capture);
@@ -597,7 +604,24 @@ pub fn start_for_app(app: &AppHandle) -> Result<GatewayStatus, String> {
         .path()
         .app_local_data_dir()
         .map_err(|_| "Missing local app data directory")?;
-    app.state::<Diagnostics>().start(directory)
+    let status = app.state::<Diagnostics>().start(directory)?;
+    crate::window::sync_capture_protection(app)
+        .map_err(|error| format!("Cannot update capture visibility: {error}"))?;
+
+    if let Some(expires_at_ms) = status.expires_at_ms {
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            let remaining_ms = expires_at_ms.saturating_sub(now_ms()).saturating_add(50);
+            tokio::time::sleep(Duration::from_millis(remaining_ms)).await;
+            if !app.state::<Diagnostics>().is_enabled() {
+                if let Err(error) = crate::window::sync_capture_protection(&app) {
+                    eprintln!("Cannot restore capture protection: {error}");
+                }
+            }
+        });
+    }
+
+    Ok(status)
 }
 
 #[tauri::command]
@@ -607,10 +631,15 @@ pub fn diagnostics_start(app: AppHandle, window: WebviewWindow) -> Result<Gatewa
 }
 
 #[tauri::command]
-pub fn diagnostics_stop(window: WebviewWindow, state: State<Diagnostics>) -> Result<(), String> {
+pub fn diagnostics_stop(
+    app: AppHandle,
+    window: WebviewWindow,
+    state: State<Diagnostics>,
+) -> Result<(), String> {
     check_window(&window)?;
     state.stop();
-    Ok(())
+    crate::window::sync_capture_protection(&app)
+        .map_err(|error| format!("Cannot restore capture protection: {error}"))
 }
 
 #[tauri::command]

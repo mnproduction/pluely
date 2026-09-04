@@ -29,9 +29,9 @@ impl HiddenAppWindows {
             windows: Vec::new(),
         };
 
-        // In a debug build the application is intentionally part of captures,
-        // including screenshots initiated by Mira itself.
-        if !crate::window::capture_protection_enabled() {
+        // Diagnostics is Mira's development mode, so keep its UI visible even
+        // in screenshots initiated by Mira itself.
+        if !crate::window::capture_protection_enabled(app) {
             return Ok(hidden);
         }
 

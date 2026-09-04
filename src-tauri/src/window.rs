@@ -8,10 +8,29 @@ mod windows_style;
 // The offset from the top of the screen to the window
 const TOP_OFFSET: i32 = 54;
 
-/// Debug builds stay visible to screen-capture tools for UI development and
-/// troubleshooting. Release builds retain Mira's capture exclusion.
-pub(crate) const fn capture_protection_enabled() -> bool {
-    !cfg!(debug_assertions)
+/// Diagnostics is Mira's development mode. While it is active, keep the app
+/// visible to screen-capture tools so the UI and telemetry can be inspected
+/// together. Normal sessions retain Mira's capture exclusion.
+pub(crate) fn capture_protection_enabled<R: Runtime, M: Manager<R>>(manager: &M) -> bool {
+    !manager
+        .state::<crate::diagnostics::Diagnostics>()
+        .is_enabled()
+}
+
+/// Apply the current diagnostics visibility policy to existing app windows.
+/// Enabling protection on a hidden Windows window can leave a stale black
+/// surface, so hidden windows receive protection when they are next shown.
+pub(crate) fn sync_capture_protection<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
+    let protection_enabled = capture_protection_enabled(app);
+    for label in ["main", "dashboard"] {
+        let Some(window) = app.get_webview_window(label) else {
+            continue;
+        };
+        if !protection_enabled || window.is_visible()? {
+            window.set_content_protected(protection_enabled)?;
+        }
+    }
+    Ok(())
 }
 
 /// Apply shell visibility without hiding the content of an app window.
@@ -37,7 +56,7 @@ pub fn show_app_window<R: Runtime>(window: &WebviewWindow<R>) -> tauri::Result<(
     window.show()?;
     let policy_result = apply_app_icon_policy(window, visible);
 
-    let protection_result = window.set_content_protected(capture_protection_enabled());
+    let protection_result = window.set_content_protected(capture_protection_enabled(window));
 
     policy_result?;
     protection_result
@@ -52,7 +71,7 @@ pub fn hide_app_window<R: Runtime>(window: &WebviewWindow<R>) -> tauri::Result<(
 
     if let Err(error) = window.hide() {
         #[cfg(target_os = "windows")]
-        let _ = window.set_content_protected(capture_protection_enabled());
+        let _ = window.set_content_protected(capture_protection_enabled(window));
         return Err(error);
     }
     #[cfg(any(target_os = "windows", target_os = "linux"))]
@@ -93,7 +112,7 @@ pub fn setup_main_window(app: &mut App) -> Result<(), Box<dyn std::error::Error>
         .ok_or("No window found")?;
 
     position_window_top_center(&window, TOP_OFFSET)?;
-    window.set_content_protected(capture_protection_enabled())?;
+    window.set_content_protected(capture_protection_enabled(app))?;
     #[cfg(target_os = "windows")]
     retain_utility_style(&window);
 
@@ -251,7 +270,7 @@ pub fn create_dashboard_window<R: Runtime>(
         .min_inner_size(800.0, 600.0)
         .hidden_title(true)
         .title_bar_style(tauri::TitleBarStyle::Overlay)
-        .content_protected(capture_protection_enabled())
+        .content_protected(capture_protection_enabled(app))
         .visible(true)
         .traffic_light_position(LogicalPosition::new(14.0, 18.0));
 
@@ -270,7 +289,7 @@ pub fn create_dashboard_window<R: Runtime>(
         // A hidden Windows window receives capture protection only after it is
         // shown. Applying the affinity while hidden can leave a stale black
         // surface in capture applications.
-        .content_protected(capture_protection_enabled() && !cfg!(target_os = "windows"))
+        .content_protected(capture_protection_enabled(app) && !cfg!(target_os = "windows"))
         .visible(false);
 
     let window = base_builder.build()?;
