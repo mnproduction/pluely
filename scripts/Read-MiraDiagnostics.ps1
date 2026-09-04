@@ -36,7 +36,7 @@ try {
             $null = $response.EnsureSuccessStatusCode()
             $snapshot = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult() | ConvertFrom-Json
         } finally { $response.Dispose() }
-        if ($snapshot.schema -notin @(1, 2) -or $snapshot.pid -ne $connection.pid) { throw 'Diagnostic process identity mismatch.' }
+        if ($snapshot.schema -notin @(1, 2, 3) -or $snapshot.pid -ne $connection.pid) { throw 'Diagnostic process identity mismatch.' }
         $snapshot | ConvertTo-Json -Depth 12 -Compress
         if ($Seconds -eq 0 -or [DateTimeOffset]::UtcNow -ge $until) { break }
         Start-Sleep -Milliseconds $IntervalMs

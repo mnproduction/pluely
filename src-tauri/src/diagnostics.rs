@@ -178,6 +178,16 @@ pub struct PipelineInfo {
     microphone_speaking: bool,
     microphone_rms: f64,
     microphone_peak: f64,
+    microphone_stream_active: bool,
+    microphone_track_live: bool,
+    microphone_track_muted: bool,
+    microphone_track_enabled: bool,
+    microphone_samples_received: u64,
+    microphone_last_frame_at_ms: u64,
+    microphone_sample_rate: u32,
+    microphone_channel_count: u32,
+    microphone_device_selection: MicrophoneDeviceSelection,
+    microphone_audio_processor: MicrophoneAudioProcessor,
     paused: bool,
     recording: bool,
     transcribing: bool,
@@ -192,6 +202,26 @@ pub struct PipelineInfo {
     response_chars: u64,
     has_error: bool,
     auto_response_mode: AutoResponseMode,
+}
+
+#[derive(Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum MicrophoneDeviceSelection {
+    #[default]
+    Unavailable,
+    BrowserId,
+    Label,
+    Default,
+    Fallback,
+}
+
+#[derive(Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum MicrophoneAudioProcessor {
+    #[default]
+    Unavailable,
+    ScriptProcessor,
+    AudioWorklet,
 }
 
 #[derive(Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
@@ -250,7 +280,7 @@ struct Snapshot {
 impl Default for Snapshot {
     fn default() -> Self {
         Self {
-            schema: 2,
+            schema: 3,
             version: env!("CARGO_PKG_VERSION"),
             pid: std::process::id(),
             at_ms: now_ms(),
@@ -722,9 +752,11 @@ mod tests {
         .is_err());
         let pipeline = serde_json::to_value(PipelineInfo::default()).unwrap();
         assert!(pipeline.get("microphone_capture_active").is_some());
+        assert!(pipeline.get("microphone_samples_received").is_some());
+        assert!(pipeline.get("microphone_device_selection").is_some());
         assert!(pipeline.get("system_turns").is_some());
         assert!(pipeline.get("transcript_text").is_none());
-        assert_eq!(diag.snapshot.lock().unwrap().schema, 2);
+        assert_eq!(diag.snapshot.lock().unwrap().schema, 3);
         for index in 0..500 {
             diag.record_pipeline(PipelineInfo {
                 panel_open: index % 2 == 0,

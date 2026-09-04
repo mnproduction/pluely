@@ -3,6 +3,7 @@ import { Button } from "@/components";
 import { AudioVisualizer } from "@/pages/app/components/speech/audio-visualizer";
 import { fetchSTT } from "@/lib";
 import { useApp } from "@/contexts";
+import { openPreferredMicrophone } from "@/lib/microphone";
 import { StopCircle, Send } from "lucide-react";
 
 interface AudioRecorderProps {
@@ -82,15 +83,9 @@ export const AudioRecorder = ({
 
   const startRecording = async () => {
     try {
-      const deviceId = selectedAudioDevices?.input?.id;
-
-      const audioConstraints: MediaTrackConstraints =
-        deviceId && deviceId !== "default"
-          ? { deviceId: { exact: deviceId } }
-          : {};
-
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: audioConstraints,
+      const { stream } = await openPreferredMicrophone({
+        id: selectedAudioDevices?.input?.id,
+        name: selectedAudioDevices?.input?.name,
       });
 
       // Store in both ref and state

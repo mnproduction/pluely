@@ -6,12 +6,14 @@ import { useState } from "react";
 import { Button } from "@/components";
 import { useApp } from "@/contexts";
 import { floatArrayToWav } from "@/lib/utils";
+import { openPreferredMicrophone } from "@/lib/microphone";
 
 interface AutoSpeechVADProps {
   submit: UseCompletionReturn["submit"];
   setState: UseCompletionReturn["setState"];
   setEnableVAD: UseCompletionReturn["setEnableVAD"];
   microphoneDeviceId?: string;
+  microphoneDeviceName?: string;
 }
 
 const AutoSpeechVADInternal = ({
@@ -19,22 +21,24 @@ const AutoSpeechVADInternal = ({
   setState,
   setEnableVAD,
   microphoneDeviceId,
+  microphoneDeviceName,
 }: AutoSpeechVADProps) => {
   const [isTranscribing, setIsTranscribing] = useState(false);
   const { selectedSttProvider, allSttProviders } = useApp();
 
-  const audioConstraints: MediaTrackConstraints =
-    microphoneDeviceId && microphoneDeviceId !== "default"
-      ? { deviceId: { exact: microphoneDeviceId } }
-      : {};
+  const openStream = async () => (await openPreferredMicrophone({
+    id: microphoneDeviceId,
+    name: microphoneDeviceName,
+  })).stream;
 
   const vad = useMicVAD({
     baseAssetPath: "/vad/",
     onnxWASMBasePath: "/vad/",
     userSpeakingThreshold: 0.6,
     startOnLoad: true,
-    getStream: () => navigator.mediaDevices.getUserMedia({ audio: audioConstraints }),
-    resumeStream: () => navigator.mediaDevices.getUserMedia({ audio: audioConstraints }),
+    processorType: "ScriptProcessor",
+    getStream: openStream,
+    resumeStream: openStream,
     onSpeechEnd: async (audio) => {
       try {
         // convert float32array to blob

@@ -27,6 +27,7 @@ export const Audio = ({
             setState={setState}
             setEnableVAD={setEnableVAD}
             microphoneDeviceId={selectedAudioDevices.input.id}
+            microphoneDeviceName={selectedAudioDevices.input.name}
           />
         ) : (
           <Button

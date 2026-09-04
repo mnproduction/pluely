@@ -169,6 +169,7 @@ export const SystemAudio = (props: useSystemAudioType) => {
               key={microphoneDeviceId || "default"}
               paused={isPaused}
               deviceId={microphoneDeviceId}
+              deviceName={microphoneDeviceName}
               onAudio={handleMicrophoneAudio}
               onLevel={updateMicrophoneLevel}
               onStatus={updateMicrophoneStatus}

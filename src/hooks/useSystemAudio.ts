@@ -27,6 +27,7 @@ import {
   type ListenSource,
   type ListenTranscriptTurn,
 } from "@/lib/listen-session";
+import type { MicrophoneCaptureStatus } from "@/lib/microphone";
 
 // VAD Configuration interface matching Rust
 export interface VadConfig {
@@ -119,6 +120,15 @@ export function useSystemAudio() {
   const pausedRef = useRef(false);
   const pendingSttRef = useRef(0);
   const microphoneLevelRef = useRef<SystemAudioLevel | null>(null);
+  const microphoneDiagnosticsRef = useRef<MicrophoneCaptureStatus>({
+    active: false,
+    speaking: false,
+    loading: false,
+    error: "",
+    samplesReceived: 0,
+    lastFrameAt: 0,
+    streamInfo: null,
+  });
   const sessionGenerationRef = useRef(0);
   const turnSequenceRef = useRef(0);
   const transcriptTurnsRef = useRef<ListenTranscriptTurn[]>([]);
@@ -183,7 +193,18 @@ export function useSystemAudio() {
         panel_open: isPopoverOpen, capture_enabled: capturing, capture_active: captureActive,
         system_capture_active: captureActive, microphone_capture_active: microphoneActive,
         microphone_speaking: microphoneSpeaking, microphone_rms: microphoneLevelRef.current?.rms ?? 0,
-        microphone_peak: microphoneLevelRef.current?.peak ?? 0, paused: isPaused,
+        microphone_peak: microphoneLevelRef.current?.peak ?? 0,
+        microphone_stream_active: microphoneDiagnosticsRef.current.streamInfo?.streamActive ?? false,
+        microphone_track_live: microphoneDiagnosticsRef.current.streamInfo?.trackLive ?? false,
+        microphone_track_muted: microphoneDiagnosticsRef.current.streamInfo?.trackMuted ?? false,
+        microphone_track_enabled: microphoneDiagnosticsRef.current.streamInfo?.trackEnabled ?? false,
+        microphone_samples_received: microphoneDiagnosticsRef.current.samplesReceived,
+        microphone_last_frame_at_ms: microphoneDiagnosticsRef.current.lastFrameAt,
+        microphone_sample_rate: microphoneDiagnosticsRef.current.streamInfo?.sampleRate ?? 0,
+        microphone_channel_count: microphoneDiagnosticsRef.current.streamInfo?.channelCount ?? 0,
+        microphone_device_selection: microphoneDiagnosticsRef.current.streamInfo?.selectionMode ?? "unavailable",
+        microphone_audio_processor: "script_processor",
+        paused: isPaused,
         recording: isRecordingInContinuousMode, transcribing: isProcessing, generating: isAIProcessing,
         response_queued: responseQueued,
         stt_configured: Boolean(selectedSttProvider.provider), ai_configured: Boolean(selectedAIProvider.provider),
@@ -719,12 +740,8 @@ export function useSystemAudio() {
     setMicrophoneLevel(level);
   }, []);
 
-  const updateMicrophoneStatus = useCallback((status: {
-    active: boolean;
-    speaking: boolean;
-    loading: boolean;
-    error: string;
-  }) => {
+  const updateMicrophoneStatus = useCallback((status: MicrophoneCaptureStatus) => {
+    microphoneDiagnosticsRef.current = status;
     setMicrophoneActive(status.active);
     setMicrophoneSpeaking(status.speaking);
     setMicrophoneLoading(status.loading);
