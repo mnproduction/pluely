@@ -3,9 +3,8 @@ use tauri::{Runtime, WebviewWindow};
 use windows_sys::Win32::{
     Foundation::{GetLastError, SetLastError, HWND},
     UI::WindowsAndMessaging::{
-        GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, ShowWindow, GWL_EXSTYLE,
-        SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_HIDE, SW_SHOWNA,
-        WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
+        GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, SWP_FRAMECHANGED,
+        SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
     },
 };
 
@@ -60,26 +59,14 @@ pub(super) fn set_tool_window<R: Runtime>(
         return Ok(());
     }
 
-    let was_visible = window.is_visible()?;
-    let was_focused = window.is_focused()?;
-    // The shell requires hide/change/show when changing taskbar-related styles.
-    // This is a native window change; the WebView and its session stay alive.
-    // Use ShowWindow for this temporary cycle: Tao's hide/show methods rebuild
-    // the extended style from their cache and would discard WS_EX_TOOLWINDOW.
-    if was_visible {
-        unsafe { ShowWindow(hwnd, SW_HIDE) };
-    }
+    // Do not hide/show a capture-protected window while changing this style.
+    // On Windows 10 and 11 that transition can make WDA_EXCLUDEFROMCAPTURE
+    // regress to a black rectangle for an already-running capture session.
+    // SetWindowPos refreshes Alt+Tab-related styles, while Tauri's separate
+    // set_skip_taskbar call updates the taskbar through ITaskbarList.
     let result = write_style(hwnd, next);
     if result.is_err() {
         let _ = write_style(hwnd, previous);
-    }
-    // Restore visibility even when the style update fails. Never open a hidden
-    // Dashboard as a side effect of changing the preference in another window.
-    if was_visible {
-        unsafe { ShowWindow(hwnd, SW_SHOWNA) };
-        if was_focused {
-            window.set_focus()?;
-        }
     }
     result.map_err(Into::into)
 }

@@ -1,6 +1,6 @@
 [package]
 name = "pluely"
-version = "0.2.1"
+version = "0.2.2"
 description = "Mira Desk: a desktop assistant with your own AI provider, based on the GPL Pluely source."
 autobins = false
 authors = ["Srikanth Nani <mail@srikanthnani.com>"]

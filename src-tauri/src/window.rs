@@ -29,12 +29,30 @@ pub fn show_app_window<R: Runtime>(window: &WebviewWindow<R>) -> tauri::Result<(
         .0
         .load(std::sync::atomic::Ordering::Relaxed);
     window.show()?;
-    apply_app_icon_policy(window, visible)?;
-    Ok(())
+    let policy_result = apply_app_icon_policy(window, visible);
+
+    #[cfg(target_os = "windows")]
+    let protection_result = window.set_content_protected(true);
+
+    #[cfg(not(target_os = "windows"))]
+    let protection_result: tauri::Result<()> = Ok(());
+
+    policy_result?;
+    protection_result
 }
 
 pub fn hide_app_window<R: Runtime>(window: &WebviewWindow<R>) -> tauri::Result<()> {
-    window.hide()?;
+    // Clear the affinity before hiding. Windows can otherwise retain a stale
+    // protected surface and render it as a black rectangle after the same HWND
+    // is shown again during an active screen capture.
+    #[cfg(target_os = "windows")]
+    window.set_content_protected(false)?;
+
+    if let Err(error) = window.hide() {
+        #[cfg(target_os = "windows")]
+        let _ = window.set_content_protected(true);
+        return Err(error);
+    }
     #[cfg(any(target_os = "windows", target_os = "linux"))]
     window.set_skip_taskbar(true)?;
     Ok(())
@@ -246,7 +264,10 @@ pub fn create_dashboard_window<R: Runtime>(
         .decorations(true)
         .inner_size(800.0, 600.0)
         .min_inner_size(800.0, 600.0)
-        .content_protected(true)
+        // A hidden Windows window receives capture protection only after it is
+        // shown. Applying the affinity while hidden can leave a stale black
+        // surface in capture applications.
+        .content_protected(!cfg!(target_os = "windows"))
         .visible(false);
 
     let window = base_builder.build()?;
