@@ -1,7 +1,7 @@
 {
   "name": "mira-desk",
   "private": false,
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Mira Desk: GPL desktop assistant with your own AI provider.",
   "author": {
     "name": "Srikanth Nani",

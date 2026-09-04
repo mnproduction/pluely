@@ -7,8 +7,61 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::{thread, time::Duration};
 use tauri::Emitter;
-use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use xcap::Monitor;
+
+const CAPTURE_SETTLE_DELAY: Duration = Duration::from_millis(120);
+
+/// Temporarily removes Mira's visible windows from the desktop composition.
+///
+/// Windows capture APIs do not all interpret `WDA_EXCLUDEFROMCAPTURE` in the
+/// same way. Some return a black rectangle for a protected transparent window.
+/// Hiding our windows before Mira takes its own screenshot lets the compositor
+/// render the content underneath instead. Drop restores only windows that were
+/// visible before capture, including on early returns and capture failures.
+struct HiddenAppWindows {
+    windows: Vec<WebviewWindow>,
+}
+
+impl HiddenAppWindows {
+    fn hide(app: &tauri::AppHandle) -> Result<Self, String> {
+        let mut hidden = Self {
+            windows: Vec::new(),
+        };
+
+        for label in ["main", "dashboard"] {
+            let Some(window) = app.get_webview_window(label) else {
+                continue;
+            };
+
+            let is_visible = window
+                .is_visible()
+                .map_err(|error| format!("Failed to check {label} window visibility: {error}"))?;
+
+            if is_visible {
+                hidden.windows.push(window.clone());
+                crate::window::hide_app_window(&window)
+                    .map_err(|error| format!("Failed to hide {label} window: {error}"))?;
+            }
+        }
+
+        if !hidden.windows.is_empty() {
+            thread::sleep(CAPTURE_SETTLE_DELAY);
+        }
+
+        Ok(hidden)
+    }
+}
+
+impl Drop for HiddenAppWindows {
+    fn drop(&mut self) {
+        for window in &self.windows {
+            if let Err(error) = crate::window::show_app_window(window) {
+                eprintln!("Failed to restore window after screen capture: {error}");
+            }
+        }
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SelectionCoords {
@@ -68,6 +121,11 @@ pub async fn start_screen_capture(app: tauri::AppHandle) -> Result<(), String> {
     state.overlay_active.store(true, Ordering::SeqCst);
     let mut captured_monitors = HashMap::new();
 
+    let hidden_windows = HiddenAppWindows::hide(&app).map_err(|error| {
+        state.overlay_active.store(false, Ordering::SeqCst);
+        error
+    })?;
+
     // Capture all monitors and store their info
     for (idx, monitor) in capture_monitors.iter().enumerate() {
         let captured_image = monitor.capture_image().map_err(|e| {
@@ -81,6 +139,8 @@ pub async fn start_screen_capture(app: tauri::AppHandle) -> Result<(), String> {
 
         captured_monitors.insert(idx, monitor_info);
     }
+
+    drop(hidden_windows);
 
     // Store all captured monitors
     *state.captured_monitors.lock().unwrap() = captured_monitors;
@@ -263,6 +323,7 @@ pub async fn capture_selected_area(
 
 #[tauri::command]
 pub async fn capture_to_base64(window: tauri::WebviewWindow) -> Result<String, String> {
+    let app = window.app_handle().clone();
     let monitor_fallback = window
         .current_monitor()
         .ok()
@@ -309,7 +370,9 @@ pub async fn capture_to_base64(window: tauri::WebviewWindow) -> Result<String, S
     let (window_left, window_top, window_right, window_bottom, window_center_x, window_center_y) =
         geometry;
 
-    tauri::async_runtime::spawn_blocking(move || {
+    let hidden_windows = HiddenAppWindows::hide(&app)?;
+
+    let capture_result = tauri::async_runtime::spawn_blocking(move || {
         let monitors = Monitor::all().map_err(|e| format!("Failed to get monitors: {}", e))?;
         if monitors.is_empty() {
             return Err("No monitors found".to_string());
@@ -387,5 +450,8 @@ pub async fn capture_to_base64(window: tauri::WebviewWindow) -> Result<String, S
         Ok(base64_str)
     })
     .await
-    .map_err(|e| format!("Task panicked: {}", e))?
+    .map_err(|e| format!("Task panicked: {}", e))?;
+
+    drop(hidden_windows);
+    capture_result
 }

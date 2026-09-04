@@ -16,6 +16,8 @@ Requests go directly to your selected provider. You pay that provider for API us
 
 ## Local features
 
+Version 0.2.1 prevents Mira's protected transparent windows from becoming black rectangles in screenshots taken by Mira. Before full-screen or area-selection capture, the app briefly hides the visible Assistant and Dashboard windows, waits for Windows to redraw the desktop underneath, and restores exactly the windows that were previously visible. Restoration also runs after capture errors.
+
 Version 0.2.0 introduces the Hybrid Listen workspace. It captures the selected microphone and system output as independent VAD streams, sends each speech segment to STT separately, and merges completed transcripts into one ordered timeline labeled **You** and **Them**. Separate live meters show the actual signal on each channel. Question mode generates a suggestion only when **Them** asks a likely English or Ukrainian question; every-pause and manual-only modes are also available. New requests queue behind an active answer, while Pause, Resume, and Stop preserve the session and let in-flight STT or AI work finish. The expanded diagnostic schema reports per-channel activity, signal levels, segment counts, queue state, and automatic-response mode without exposing audio, transcript text, response text, provider configuration, or keys.
 
 Version 0.1.18 keeps the System Audio panel mounted when capture stops and a completed transcript or answer remains. This complements the state-preservation fix in 0.1.17 so the retained result is actually visible until the user closes the panel or starts a new conversation.
