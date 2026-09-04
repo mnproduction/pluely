@@ -1,5 +1,16 @@
 import { useState, useEffect } from "react";
-import { Button, Card, GetLicense, Switch } from "@/components";
+import {
+  Button,
+  Card,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  GetLicense,
+  Switch,
+} from "@/components";
 import { RotateCcw, AlertCircle, Keyboard, Lock } from "lucide-react";
 import {
   getAllShortcutActions,
@@ -22,6 +33,7 @@ export const ShortcutManager = () => {
   const [editingAction, setEditingAction] = useState<string | null>(null);
   const [conflicts, setConflicts] = useState<string[]>([]);
   const [isApplying, setIsApplying] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
 
   useEffect(() => {
     loadShortcuts();
@@ -107,6 +119,7 @@ export const ShortcutManager = () => {
       setBindings(defaultConfig.bindings);
       setConflicts([]);
       setEditingAction(null);
+      setResetOpen(false);
 
       // Reload to ensure fresh state
       loadShortcuts();
@@ -150,7 +163,7 @@ export const ShortcutManager = () => {
           <Button
             size="sm"
             variant="outline"
-            onClick={handleReset}
+            onClick={() => setResetOpen(true)}
             disabled={isApplying}
             title="Reset all shortcuts to platform defaults"
           >
@@ -162,7 +175,7 @@ export const ShortcutManager = () => {
 
       {/* Conflicts Alert */}
       {conflicts.length > 0 && (
-        <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-md">
+        <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 rounded-md">
           <div className="flex items-start gap-2">
             <AlertCircle className="size-3 lg:size-4 text-destructive mt-0.5" />
             <div className="flex-1">
@@ -240,14 +253,18 @@ export const ShortcutManager = () => {
               ) : (
                 // VIEW MODE - Show shortcut with controls
                 <div className="flex items-center gap-3">
-                  <div className="flex items-center">
+                  <div className="flex items-center gap-2">
                     <Switch
                       checked={binding.enabled}
                       onCheckedChange={(enabled) =>
                         handleToggleEnabled(action.id, enabled)
                       }
                       disabled={isApplying}
+                      aria-label={`${binding.enabled ? "Disable" : "Enable"} ${action.name}`}
                     />
+                    <span className="w-14 text-xs text-muted-foreground">
+                      {binding.enabled ? "Enabled" : "Disabled"}
+                    </span>
                   </div>
 
                   <div className="flex-1">
@@ -300,8 +317,31 @@ export const ShortcutManager = () => {
 
       {/* Footer Note */}
       <p className="text-xs text-muted-foreground text-center pt-2">
-        💡 Shortcuts work globally, even when the app is hidden
+        Shortcuts work globally, even when the app is hidden.
       </p>
+
+      <div className="min-h-5 text-center text-xs text-muted-foreground" aria-live="polite">
+        {isApplying ? "Applying shortcut changes..." : ""}
+      </div>
+
+      <Dialog open={resetOpen} onOpenChange={setResetOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reset all shortcuts?</DialogTitle>
+            <DialogDescription>
+              This replaces every keyboard shortcut with the Windows defaults.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setResetOpen(false)} disabled={isApplying}>
+              Cancel
+            </Button>
+            <Button onClick={handleReset} disabled={isApplying} aria-busy={isApplying}>
+              {isApplying ? "Resetting..." : "Reset shortcuts"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

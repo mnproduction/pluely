@@ -24,6 +24,8 @@ export function useCustomSttProviders() {
 
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const handleEdit = (providerId: string) => {
     const customProviders = getCustomSttProviders();
@@ -51,25 +53,34 @@ export function useCustomSttProviders() {
   };
 
   const handleDelete = (providerId: string) => {
+    setDeleteError(null);
     setDeleteConfirm(providerId);
   };
 
   const confirmDelete = async () => {
     if (!deleteConfirm) return;
 
+    setIsDeleting(true);
+    setDeleteError(null);
     try {
       const success = removeCustomSttProvider(deleteConfirm);
       if (success) {
         setDeleteConfirm(null);
         loadData(); // Refresh data
+      } else {
+        setDeleteError("Mira Desk could not delete this provider. Try again.");
       }
     } catch (error) {
       console.error("Error deleting custom provider:", error);
+      setDeleteError("Mira Desk could not delete this provider. Try again.");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
   const cancelDelete = () => {
     setDeleteConfirm(null);
+    setDeleteError(null);
   };
 
   const handleSave = async () => {
@@ -156,6 +167,8 @@ export function useCustomSttProviders() {
     editingProvider,
     setEditingProvider,
     deleteConfirm,
+    deleteError,
+    isDeleting,
     formData,
     setFormData,
     handleSave,

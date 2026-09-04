@@ -86,8 +86,9 @@ export const CreateEditProvider = ({
                 description="The curl command to use with the STT provider."
               />
               <Textarea
+                aria-label="Speech-to-text provider cURL command"
                 className={cn(
-                  "h-74 font-mono text-sm",
+                  "h-74 resize-none font-mono text-sm",
                   errors.curl && "border-red-500"
                 )}
                 placeholder={`curl -X POST "https://api.openai.com/v1/audio/transcriptions" \\
@@ -100,29 +101,27 @@ export const CreateEditProvider = ({
                 }
               />
               {errors.curl && (
-                <p className="text-xs text-red-500 mt-1">{errors.curl}</p>
+                <p role="alert" className="text-xs text-red-500 mt-1">{errors.curl}</p>
               )}
 
               {/* Variable Instructions */}
               <div className="bg-muted/50 p-4 rounded-lg space-y-4">
                 <div className="bg-card border p-3 rounded-lg">
-                  <p className="text-sm font-medium text-primary mb-2">
-                    💡 Important: You can add custom variables or directly
-                    include your API keys/values
+                  <p className="mb-2 text-sm font-medium text-primary">
+                    Keep secrets out of the cURL command
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    No need to enter variables separately when selecting the
-                    provider - you can embed them directly in the curl command
-                    (e.g., replace YOUR_API_KEY with your actual key or use{" "}
-                    <code className="bg-muted px-1 rounded text-xs">
-                      {"{{MODEL}}"}
+                    Use{" "}
+                    <code className="rounded bg-muted px-1 text-xs">
+                      {"{{API_KEY}}"}
                     </code>{" "}
-                    for model name).
+                    in credential headers. Mira Desk asks for the value when
+                    you select this provider and protects it with Windows.
                   </p>
                 </div>
 
                 <h4 className="text-sm font-semibold text-foreground">
-                  ⚠️ Required Variables for STT Providers:
+                  Required variables for STT providers
                 </h4>
                 <div className="grid grid-cols-1 gap-3 text-sm">
                   <div className="flex items-center gap-3 p-3 bg-card border rounded-lg">
@@ -130,22 +129,13 @@ export const CreateEditProvider = ({
                       {"{{AUDIO}}"}
                     </code>
                     <span className="text-foreground font-medium">
-                      → REQUIRED: Base64 encoded audio data or audio file as wav
-                      file if you are using multipart/form-data (using -F or
-                      --form)
+                      Required: Base64 audio data or a WAV file when using
+                      multipart/form-data with -F or --form
                     </span>
                   </div>
                 </div>
 
                 <div className="space-y-3">
-                  <p className="text-sm text-muted-foreground">
-                    <strong className="text-foreground">Quick Setup:</strong>{" "}
-                    Replace{" "}
-                    <code className="bg-muted px-1 rounded text-xs">
-                      YOUR_API_KEY
-                    </code>{" "}
-                    with your actual API key directly in the curl command.
-                  </p>
                   <p className="text-sm text-muted-foreground">
                     <strong className="text-foreground">
                       Custom Variables:
@@ -154,11 +144,11 @@ export const CreateEditProvider = ({
                     <code className="bg-muted px-1 rounded text-xs">
                       {"{{VARIABLE_NAME}}"}
                     </code>{" "}
-                    format and they'll be available for configuration when you
+                    format. They become available for configuration when you
                     select this provider.
                   </p>
                   <p className="text-xs text-muted-foreground italic">
-                    💡 Tip: The{" "}
+                    The{" "}
                     <code className="bg-muted px-1 rounded text-xs">
                       {"{{AUDIO}}"}
                     </code>{" "}

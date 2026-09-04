@@ -3,10 +3,13 @@ import {
   AlwaysOnTopToggle,
   AppIconToggle,
   AutostartToggle,
+  DeleteChats,
 } from "./components";
 import { PageLayout } from "@/layouts";
+import { useSettings } from "@/hooks";
 
 const Settings = () => {
+  const settings = useSettings();
   return (
     <PageLayout title="Settings" description="Manage your settings">
       {/* Theme */}
@@ -20,6 +23,8 @@ const Settings = () => {
 
       {/* Always On Top Toggle */}
       <AlwaysOnTopToggle />
+
+      <DeleteChats {...settings} />
     </PageLayout>
   );
 };

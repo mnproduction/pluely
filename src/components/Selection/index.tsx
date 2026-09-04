@@ -1,5 +1,5 @@
 import {
-  Select,
+  Select as AuthoredSelect,
   SelectContent,
   SelectItem,
   SelectTrigger,
@@ -23,8 +23,9 @@ export const Selection = ({
   disabled?: boolean;
 }) => {
   return (
-    <Select value={selected || ""} onValueChange={(value) => onChange(value)}>
+    <AuthoredSelect value={selected || ""} onValueChange={(value) => onChange(value)}>
       <SelectTrigger
+        aria-label={placeholder || "Select an option"}
         disabled={isLoading || disabled}
         className="shadow-none w-full h-11 border-1 border-input/50 focus:border-primary/50 transition-colors"
       >
@@ -43,7 +44,7 @@ export const Selection = ({
         {options?.filter((provider) => provider.isCustom).length > 0 && (
           <div className="border-b border-input/50 pb-2">
             <div className="px-2 py-1 text-xs font-semibold text-muted-foreground">
-              Custom AI Providers
+              Custom providers
             </div>
             {options
               ?.filter((provider) => provider.isCustom)
@@ -70,6 +71,6 @@ export const Selection = ({
             </SelectItem>
           ))}
       </SelectContent>
-    </Select>
+    </AuthoredSelect>
   );
 };

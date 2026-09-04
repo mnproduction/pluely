@@ -1,6 +1,6 @@
 import {
   Header,
-  Select,
+  Select as AuthoredSelect,
   SelectContent,
   SelectItem,
   SelectTrigger,
@@ -23,14 +23,14 @@ export const CursorSelection = ({ className }: CursorSelectionProps) => {
     <div id="cursor" className={`space-y-2 ${className}`}>
       <Header
         title="Cursor"
-        description="Control pluely cursor visibility"
+        description="Choose how the pointer appears over the compact Assistant"
         isMainTitle
         rightSlot={
-          <Select
+          <AuthoredSelect
             value={customizable.cursor.type}
             onValueChange={(value) => setCursorType(value as CursorType)}
           >
-            <SelectTrigger>
+            <SelectTrigger aria-label="Cursor style">
               <SelectValue placeholder="Select a cursor type" />
             </SelectTrigger>
             <SelectContent position="popper" align="end">
@@ -52,7 +52,7 @@ export const CursorSelection = ({ className }: CursorSelectionProps) => {
                 <Pointer className="size-3" />)
               </SelectItem>
             </SelectContent>
-          </Select>
+          </AuthoredSelect>
         }
       />
     </div>

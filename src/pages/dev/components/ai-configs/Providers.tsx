@@ -1,7 +1,7 @@
-import { Button, Header, Input, Selection, TextInput } from "@/components";
+import { Button, Header, SecretInput, Selection, TextInput } from "@/components";
 import { UseSettingsReturn } from "@/types";
 import curl2Json, { ResultJSON } from "@bany/curl-to-json";
-import { KeyIcon, TrashIcon } from "lucide-react";
+import { TrashIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
 export const Providers = ({
@@ -37,6 +37,27 @@ export const Providers = ({
 
   const isApiKeyEmpty = () => {
     return !getApiKeyValue().trim();
+  };
+
+  const handleApiKeyChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const apiKeyVar = findKeyAndValue("api_key");
+    if (!apiKeyVar || !selectedAIProvider) return;
+    onSetSelectedAIProvider({
+      ...selectedAIProvider,
+      variables: {
+        ...selectedAIProvider.variables,
+        [apiKeyVar.key]: event.target.value,
+      },
+    });
+  };
+
+  const removeApiKey = () => {
+    const apiKeyVar = findKeyAndValue("api_key");
+    if (!apiKeyVar || !selectedAIProvider) return;
+    onSetSelectedAIProvider({
+      ...selectedAIProvider,
+      variables: { ...selectedAIProvider.variables, [apiKeyVar.key]: "" },
+    });
   };
 
   return (
@@ -87,83 +108,27 @@ export const Providers = ({
               )?.isCustom
                 ? "Custom Provider"
                 : selectedAIProvider?.provider
-            } API key to authenticate and access AI models. Your key is stored locally and never shared.`}
+            } API key. It is protected by your Windows account and sent only to the selected provider for authentication.`}
           />
 
           <div className="space-y-2">
             <div className="flex gap-2">
-              <Input
-                type="password"
+              <SecretInput
+                aria-label="AI provider API key"
                 placeholder="**********"
                 value={getApiKeyValue()}
-                onChange={(value) => {
-                  const apiKeyVar = findKeyAndValue("api_key");
-                  if (!apiKeyVar || !selectedAIProvider) return;
-
-                  onSetSelectedAIProvider({
-                    ...selectedAIProvider,
-                    variables: {
-                      ...selectedAIProvider.variables,
-                      [apiKeyVar.key]:
-                        typeof value === "string" ? value : value.target.value,
-                    },
-                  });
-                }}
-                onKeyDown={(e) => {
-                  const apiKeyVar = findKeyAndValue("api_key");
-                  if (!apiKeyVar || !selectedAIProvider) return;
-
-                  onSetSelectedAIProvider({
-                    ...selectedAIProvider,
-                    variables: {
-                      ...selectedAIProvider.variables,
-                      [apiKeyVar.key]: (e.target as HTMLInputElement).value,
-                    },
-                  });
-                }}
+                onChange={handleApiKeyChange}
                 disabled={false}
                 className="flex-1 h-11 border-1 border-input/50 focus:border-primary/50 transition-colors"
               />
-              {isApiKeyEmpty() ? (
+              {!isApiKeyEmpty() && (
                 <Button
-                  onClick={() => {
-                    const apiKeyVar = findKeyAndValue("api_key");
-                    if (!apiKeyVar || !selectedAIProvider || isApiKeyEmpty())
-                      return;
-
-                    onSetSelectedAIProvider({
-                      ...selectedAIProvider,
-                      variables: {
-                        ...selectedAIProvider.variables,
-                        [apiKeyVar.key]: getApiKeyValue(),
-                      },
-                    });
-                  }}
-                  disabled={isApiKeyEmpty()}
-                  size="icon"
-                  className="shrink-0 h-11 w-11"
-                  title="Submit API Key"
-                >
-                  <KeyIcon className="h-4 w-4" />
-                </Button>
-              ) : (
-                <Button
-                  onClick={() => {
-                    const apiKeyVar = findKeyAndValue("api_key");
-                    if (!apiKeyVar || !selectedAIProvider) return;
-
-                    onSetSelectedAIProvider({
-                      ...selectedAIProvider,
-                      variables: {
-                        ...selectedAIProvider.variables,
-                        [apiKeyVar.key]: "",
-                      },
-                    });
-                  }}
+                  onClick={removeApiKey}
                   size="icon"
                   variant="destructive"
                   className="shrink-0 h-11 w-11"
                   title="Remove API Key"
+                  aria-label="Remove AI provider API key"
                 >
                   <TrashIcon className="h-4 w-4" />
                 </Button>

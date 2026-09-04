@@ -8,13 +8,12 @@ import {
   MonitorIcon,
   HomeIcon,
   PowerIcon,
-  CoffeeIcon,
   GlobeIcon,
   BugIcon,
   MessageSquareTextIcon,
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
-import { XIcon, GithubIcon } from "@/components";
+import { GithubIcon } from "@/components";
 
 export const useMenuItems = () => {
 
@@ -67,7 +66,7 @@ export const useMenuItems = () => {
 
     {
       icon: Code,
-      label: "Dev space",
+      label: "Providers",
       href: "/dev-space",
     },
   ];
@@ -101,16 +100,6 @@ export const useMenuItems = () => {
       title: "Upstream source",
       icon: GithubIcon,
       link: "https://github.com/iamsrikanthnani/pluely",
-    },
-    {
-      title: "Buy Me a Coffee",
-      icon: CoffeeIcon,
-      link: "https://buymeacoffee.com/srikanthnani",
-    },
-    {
-      title: "Follow on X",
-      icon: XIcon,
-      link: "https://x.com/srikanthnani",
     },
   ];
 

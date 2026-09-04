@@ -1,4 +1,4 @@
-import { Button, Label } from "@/components";
+import { Button } from "@/components";
 import { cn } from "@/lib/utils";
 import { ArrowLeftIcon } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -27,6 +27,7 @@ export const Header = ({
   allowBackButton = false,
 }: HeaderProps) => {
   const navigate = useNavigate();
+  const TitleTag = isMainTitle ? "h1" : "h2";
   return (
     <div
       className={cn(
@@ -42,12 +43,12 @@ export const Header = ({
     >
       <div className="flex items-center gap-2">
         {allowBackButton && (
-          <Button size="icon" variant="outline" onClick={() => navigate(-1)}>
+          <Button size="icon" variant="outline" aria-label="Go back" title="Go back" onClick={() => navigate(-1)}>
             <ArrowLeftIcon className="size-3 lg:size-4 transition-all duration-300" />
           </Button>
         )}
         <div className="flex flex-col">
-          <Label
+          <TitleTag
             className={`${cn(
               "font-semibold line-clamp-1",
               isMainTitle
@@ -56,7 +57,7 @@ export const Header = ({
             )} ${titleClassName}`}
           >
             {title}
-          </Label>
+          </TitleTag>
           <p
             className={cn(
               `select-none text-muted-foreground leading-relaxed ${

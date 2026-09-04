@@ -91,6 +91,7 @@ export const useSettings = () => {
       setShowDeleteConfirmDialog(false);
     } catch (error) {
       console.error("Failed to delete all conversations:", error);
+      throw error;
     }
   };
 

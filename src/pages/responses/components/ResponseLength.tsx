@@ -1,4 +1,4 @@
-import { Card, Header } from "@/components";
+import { Header } from "@/components";
 import { RESPONSE_LENGTHS } from "@/lib";
 import { useApp } from "@/contexts";
 import { updateResponseLength } from "@/lib/storage/response-settings.storage";
@@ -22,6 +22,7 @@ export const ResponseLength = () => {
     setSelectedLength(lengthId);
     updateResponseLength(lengthId);
   };
+  const selectLength = (lengthId: string) => () => handleLengthChange(lengthId);
 
   return (
     <div className="space-y-4">
@@ -31,16 +32,20 @@ export const ResponseLength = () => {
         isMainTitle
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3" role="radiogroup" aria-label="Response length">
         {RESPONSE_LENGTHS.map((length) => (
-          <Card
+          <button
+            type="button"
+            role="radio"
+            aria-checked={selectedLength === length.id}
+            disabled={!localFeaturesEnabled}
             key={length.id}
-            className={`relative p-4 border lg:border-2 shadow-none cursor-pointer transition-all ${
+            className={`relative rounded-xl border p-4 text-left shadow-none transition-all focus-visible:ring-4 focus-visible:ring-ring/60 lg:border-2 ${
               selectedLength === length.id
-                ? "border-primary"
+                ? "border-primary bg-primary/5"
                 : "border-border hover:border-primary/50"
             } ${!localFeaturesEnabled ? "opacity-50 cursor-not-allowed" : ""}`}
-            onClick={() => handleLengthChange(length.id)}
+            onClick={selectLength(length.id)}
           >
             <div className="space-y-1">
               <h3 className="text-sm lg:text-md font-semibold">
@@ -53,7 +58,7 @@ export const ResponseLength = () => {
             {selectedLength === length.id && (
               <CheckCircle2 className="size-5 text-green-500 flex-shrink-0 absolute top-2 right-2" />
             )}
-          </Card>
+          </button>
         ))}
       </div>
     </div>

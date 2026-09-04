@@ -1,9 +1,28 @@
 import { UseSettingsReturn } from "@/types";
-import { Card, Button, Header } from "@/components";
+import {
+  Card,
+  Button,
+  Header,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components";
 import { EditIcon, TrashIcon } from "lucide-react";
 import { CreateEditProvider } from "./CreateEditProvider";
 import { useCustomSttProviders } from "@/hooks";
 import curl2Json from "@bany/curl-to-json";
+
+const endpointLabel = (curl: string) => {
+  try {
+    const endpoint = new URL(curl2Json(curl)?.url || "");
+    return `${endpoint.origin}${endpoint.pathname}`;
+  } catch {
+    return "Invalid cURL command";
+  }
+};
 
 export const CustomProviders = ({ allSttProviders }: UseSettingsReturn) => {
   const customProviderHook = useCustomSttProviders();
@@ -11,6 +30,8 @@ export const CustomProviders = ({ allSttProviders }: UseSettingsReturn) => {
     handleEdit,
     handleDelete,
     deleteConfirm,
+    deleteError,
+    isDeleting,
     confirmDelete,
     cancelDelete,
   } = customProviderHook;
@@ -18,8 +39,8 @@ export const CustomProviders = ({ allSttProviders }: UseSettingsReturn) => {
   return (
     <div className="space-y-2">
       <Header
-        title="Custom STT Providers"
-        description="Create and manage custom STT providers. Configure endpoints, authentication, and response formats."
+        title="Advanced: Custom STT Providers"
+        description="Add a cURL endpoint when no built-in speech provider matches your service."
       />
 
       <div className="space-y-2">
@@ -30,8 +51,6 @@ export const CustomProviders = ({ allSttProviders }: UseSettingsReturn) => {
             {allSttProviders
               .filter((provider) => provider?.isCustom)
               .map((provider) => {
-                const json = curl2Json(provider?.curl);
-
                 return (
                   <Card
                     key={provider?.id}
@@ -40,7 +59,7 @@ export const CustomProviders = ({ allSttProviders }: UseSettingsReturn) => {
                     <div className="flex items-center justify-between">
                       <div>
                         <h4 className="font-medium text-sm">
-                          {json?.url || "Invalid curl command"}
+                          {endpointLabel(provider?.curl)}
                         </h4>
 
                         <div className="flex items-center gap-2 mt-1">
@@ -89,28 +108,28 @@ export const CustomProviders = ({ allSttProviders }: UseSettingsReturn) => {
       </div>
       <CreateEditProvider customProviderHook={customProviderHook} />
 
-      {/* Delete Confirmation Dialog */}
-      {deleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-background border rounded-lg p-6 max-w-md mx-4">
-            <h3 className="text-lg font-semibold mb-2">
-              Delete Custom STT Provider
-            </h3>
-            <p className="text-sm text-muted-foreground mb-4">
-              Are you sure you want to delete this custom STT provider? This
-              action cannot be undone.
-            </p>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={cancelDelete}>
-                Cancel
-              </Button>
-              <Button variant="destructive" onClick={confirmDelete}>
-                Delete
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <Dialog
+        open={Boolean(deleteConfirm)}
+        onOpenChange={(open) => !open && cancelDelete()}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete custom STT provider?</DialogTitle>
+            <DialogDescription>
+              This permanently removes its local endpoint configuration.
+            </DialogDescription>
+          </DialogHeader>
+          {deleteError && <p role="alert" className="text-sm text-destructive">{deleteError}</p>}
+          <DialogFooter>
+            <Button variant="outline" onClick={cancelDelete} disabled={isDeleting}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={confirmDelete} disabled={isDeleting} aria-busy={isDeleting}>
+              {isDeleting ? "Deleting..." : "Delete provider"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

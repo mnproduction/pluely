@@ -35,23 +35,17 @@ const Audio = () => {
   return (
     <PageLayout
       title="Audio Settings"
-      description="Configure your audio input and output devices for voice interaction and system audio capture."
+      description="Choose and verify both sides of a Listen session"
     >
       <AudioSelection />
 
-      <div className="text-xs text-amber-600 bg-amber-500/10 p-3 rounded-md mb-4 space-y-2">
+      <div className="space-y-2 rounded-lg bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300">
         <p>
-          <strong>⚠️ If selected devices don't work:</strong> Please verify your
-          default system audio settings. Go to{" "}
+          <strong>If a test receives no signal:</strong> open{" "}
           <strong>{osInstructions.mic}</strong> for microphone and{" "}
           <strong>{osInstructions.audio}</strong> for speakers/headphones.
-          Ensure the correct devices are set as default in your operating
-          system.
-        </p>
-        <p className="text-amber-600/80">
-          <strong>Note:</strong> If the selected device fails or is unavailable,
-          Mira Desk will automatically fall back to your system's default audio
-          devices.
+          In meeting apps, the Speakers device must match the system-audio
+          device selected above.
         </p>
       </div>
     </PageLayout>

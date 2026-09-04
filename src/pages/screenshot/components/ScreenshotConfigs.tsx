@@ -1,7 +1,7 @@
 import {
   Label,
   Input,
-  Select,
+  Select as AuthoredSelect,
   SelectContent,
   SelectItem,
   SelectTrigger,
@@ -27,18 +27,18 @@ export const ScreenshotConfigs = ({
               title="Capture Method"
               description={
                 screenshotConfiguration.enabled
-                  ? "Screenshot Mode: Quickly capture the entire screen with one click."
-                  : "Selection Mode: Click and drag to select a specific area to capture."
+                  ? "Capture the entire screen with one action."
+                  : "Drag to capture only the area you choose."
               }
             />
           </div>
-          <Select
+          <AuthoredSelect
             value={screenshotConfiguration.enabled ? "screenshot" : "selection"}
             onValueChange={(value) =>
               handleScreenshotEnabledChange(value === "screenshot")
             }
           >
-            <SelectTrigger className="w-full h-11 border-1 border-input/50 focus:border-primary/50 transition-colors">
+            <SelectTrigger aria-label="Screenshot capture method" className="w-full h-11 border-1 border-input/50 focus:border-primary/50 transition-colors">
               <div className="flex items-center gap-2">
                 {screenshotConfiguration.enabled ? (
                   <LaptopMinimalIcon className="size-4" />
@@ -47,8 +47,8 @@ export const ScreenshotConfigs = ({
                 )}
                 <div className="text-sm font-medium">
                   {screenshotConfiguration.enabled
-                    ? "Screenshot Mode"
-                    : "Selection Mode"}
+                    ? "Full screen"
+                    : "Selected area"}
                 </div>
               </div>
             </SelectTrigger>
@@ -56,20 +56,20 @@ export const ScreenshotConfigs = ({
               <SelectItem value="selection" disabled={!localFeaturesEnabled}>
                 <div className="flex items-center gap-2">
                   <MousePointer2Icon className="size-4" />
-                  <div className="font-medium">Selection Mode</div>
+                  <div className="font-medium">Selected area</div>
                   {!localFeaturesEnabled && (
                     <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded">
-                      You need an active license to use Selection Mode.
+                      License required
                     </span>
                   )}
                 </div>
               </SelectItem>
               <SelectItem value="screenshot" className="flex flex-row gap-2">
                 <LaptopMinimalIcon className="size-4" />
-                <div className="font-medium">Screenshot Mode</div>
+                <div className="font-medium">Full screen</div>
               </SelectItem>
             </SelectContent>
-          </Select>
+          </AuthoredSelect>
         </div>
 
         {/* Mode Selection: Auto and Manual */}
@@ -79,62 +79,53 @@ export const ScreenshotConfigs = ({
               title="Processing Mode"
               description={
                 screenshotConfiguration.mode === "manual"
-                  ? "Screenshots will be captured and automatically added to your attached files. You can then submit them with your own prompt. you can capture multiple screenshots and submit them later."
-                  : "Screenshots will be automatically submitted to AI using your custom prompt. No manual intervention required. only one screenshot can be submitted at a time."
+                  ? "Review one or more captures, then send them with your message."
+                  : "Send each capture immediately with the prompt below."
               }
             />
           </div>
-          <Select
+          <AuthoredSelect
             value={screenshotConfiguration.mode}
             onValueChange={handleScreenshotModeChange}
           >
-            <SelectTrigger className="w-full h-11 border-1 border-input/50 focus:border-primary/50 transition-colors">
+            <SelectTrigger aria-label="Screenshot processing mode" className="w-full h-11 border-1 border-input/50 focus:border-primary/50 transition-colors">
               <div className="flex items-center gap-2">
                 <div className="text-sm font-medium">
-                  {screenshotConfiguration.mode === "auto" ? "Auto" : "Manual"}{" "}
-                  Mode
+                  {screenshotConfiguration.mode === "auto"
+                    ? "Send automatically"
+                    : "Review before sending"}
                 </div>
               </div>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="manual">
-                <div className="font-medium">Manual Mode</div>
+                <div className="font-medium">Review before sending</div>
               </SelectItem>
               <SelectItem value="auto">
-                <div className="font-medium">Auto Mode</div>
+                <div className="font-medium">Send automatically</div>
               </SelectItem>
             </SelectContent>
-          </Select>
+          </AuthoredSelect>
         </div>
 
         {/* Auto Prompt Input - Only show when auto mode is selected */}
         {screenshotConfiguration.mode === "auto" && (
           <div className="space-y-2">
-            <Label className="text-sm font-medium">Auto Prompt</Label>
+            <Label htmlFor="screenshot-auto-prompt" className="text-sm font-medium">Prompt for automatic analysis</Label>
             <Input
+              id="screenshot-auto-prompt"
               placeholder="Enter prompt for automatic screenshot analysis..."
               value={screenshotConfiguration.autoPrompt}
               onChange={(e) => handleScreenshotPromptChange(e.target.value)}
               className="w-full h-11 border-1 border-input/50 focus:border-primary/50 transition-colors"
             />
             <p className="text-xs text-muted-foreground">
-              This prompt will be used automatically when screenshots are taken
+              Mira Desk sends this prompt with each automatic capture.
             </p>
           </div>
         )}
       </div>
 
-      {/* Tips */}
-      <div className="text-xs text-muted-foreground/70">
-        <p>
-          💡 <strong>Tip:</strong>{" "}
-          {screenshotConfiguration.enabled
-            ? "Screenshot mode captures the full screen with one click."
-            : "Selection mode lets you choose specific areas to capture."}{" "}
-          Auto mode is great for quick analysis, manual mode gives you more
-          control.
-        </p>
-      </div>
     </div>
   );
 };

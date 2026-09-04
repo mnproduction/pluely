@@ -64,15 +64,16 @@ export const CreateEditDialog = ({
                   : "Define a new AI behavior and personality."}
               </DialogDescription>
             </div>
-            <GenerateSystemPrompt onGenerate={onGenerate} />
           </div>
         </DialogHeader>
         <div className="space-y-4 py-4 px-6 overflow-y-auto flex-1">
+          <GenerateSystemPrompt onGenerate={onGenerate} />
           <div className="space-y-2">
-            <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+            <label htmlFor="system-prompt-name" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
               Name
             </label>
             <Input
+              id="system-prompt-name"
               placeholder="e.g., Code Review Expert, Creative Writer..."
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
@@ -81,10 +82,11 @@ export const CreateEditDialog = ({
             />
           </div>
           <div className="space-y-2">
-            <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+            <label htmlFor="system-prompt-content" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
               System Prompt
             </label>
             <Textarea
+              id="system-prompt-content"
               placeholder="You are a helpful AI assistant. Be concise, accurate, and friendly in your responses..."
               className="min-h-[200px] max-h-[400px] resize-none overflow-y-auto"
               value={form.prompt}
@@ -92,8 +94,7 @@ export const CreateEditDialog = ({
               disabled={isSaving}
             />
             <p className="text-xs text-muted-foreground/70">
-              💡 Tip: Be specific about tone, expertise level, and response
-              format
+              Be specific about tone, expertise level, and response format.
             </p>
           </div>
         </div>

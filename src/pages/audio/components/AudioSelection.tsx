@@ -1,5 +1,5 @@
 import {
-  Select,
+  Select as AuthoredSelect,
   SelectContent,
   SelectItem,
   SelectTrigger,
@@ -12,18 +12,14 @@ import { useApp } from "@/contexts";
 import { STORAGE_KEYS } from "@/config/constants";
 import { safeLocalStorage } from "@/lib/storage";
 import { invoke } from "@tauri-apps/api/core";
+import { AudioTest } from "./AudioTest";
 
 export const AudioSelection = () => {
   const { selectedAudioDevices, setSelectedAudioDevices } = useApp();
 
   const [isLoadingDevices, setIsLoadingDevices] = useState(false);
-  const [showSuccess, setShowSuccess] = useState<{
-    input: boolean;
-    output: boolean;
-  }>({
-    input: false,
-    output: false,
-  });
+  const [deviceLoadError, setDeviceLoadError] = useState("");
+  const [selectionStatus, setSelectionStatus] = useState({ input: "", output: "" });
   const [devices, setDevices] = useState<{
     input: { id: string; name: string; is_default: boolean }[];
     output: { id: string; name: string; is_default: boolean }[];
@@ -43,6 +39,7 @@ export const AudioSelection = () => {
   // Load all audio devices (input and output)
   const loadAudioDevices = async () => {
     setIsLoadingDevices(true);
+    setDeviceLoadError("");
     try {
       const [inputDevices, outputDevices] = await Promise.all([
         invoke<{ id: string; name: string; is_default: boolean }[]>(
@@ -100,6 +97,7 @@ export const AudioSelection = () => {
       }
     } catch (error) {
       console.error("Error loading audio devices:", error);
+      setDeviceLoadError("Could not load audio devices. Check Windows sound settings, then refresh.");
     } finally {
       setIsLoadingDevices(false);
     }
@@ -124,10 +122,10 @@ export const AudioSelection = () => {
     setSelectedAudioDevices(newDevices);
     saveToStorage(newDevices);
 
-    setShowSuccess((prev) => ({ ...prev, [type]: true }));
-    setTimeout(() => {
-      setShowSuccess((prev) => ({ ...prev, [type]: false }));
-    }, 3000);
+    setSelectionStatus((previous) => ({
+      ...previous,
+      [type]: `${selectedDevice.name} selected. Run the test below to verify the signal.`,
+    }));
   };
 
   return (
@@ -136,19 +134,19 @@ export const AudioSelection = () => {
       <div className="space-y-3">
         <Header
           title="Microphone"
-          description="Select your microphone for voice input and speech-to-text. If issues occur, adjust your system's default microphone in OS settings."
+          description="Choose the device that captures your voice."
         />
 
         <div className="space-y-3">
           {/* Microphone Selection Dropdown */}
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <Select
+              <AuthoredSelect
                 value={selectedAudioDevices.input.id}
                 onValueChange={(value) => handleDeviceChange("input", value)}
                 disabled={isLoadingDevices || devices?.input?.length === 0}
               >
-                <SelectTrigger className="w-full h-11 border-1 border-input/50 focus:border-primary/50 transition-colors">
+                <SelectTrigger aria-label="Microphone" className="w-full h-11 border-1 border-input/50 focus:border-primary/50 transition-colors">
                   <div className="flex items-center gap-2">
                     <MicIcon className="size-4" />
                     <div className="text-sm font-medium truncate">
@@ -178,7 +176,7 @@ export const AudioSelection = () => {
                     </SelectItem>
                   ))}
                 </SelectContent>
-              </Select>
+              </AuthoredSelect>
 
               {/* Refresh button */}
               <Button
@@ -188,6 +186,7 @@ export const AudioSelection = () => {
                 disabled={isLoadingDevices}
                 className="h-11 w-11 shrink-0"
                 title="Refresh microphone list"
+                aria-label="Refresh microphone list"
               >
                 <RefreshCwIcon
                   className={`size-4 ${isLoadingDevices ? "animate-spin" : ""}`}
@@ -196,34 +195,11 @@ export const AudioSelection = () => {
             </div>
           </div>
 
-          {/* Success message */}
-          {showSuccess.input && (
-            <div className="text-xs text-green-500 bg-green-500/10 p-3 rounded-md">
-              <strong>✓ Microphone changed successfully!</strong>
-              <br />
-              Using: {selectedAudioDevices.input.name || "Unknown device"}
-            </div>
-          )}
-
-          {/* Permission Notice */}
-          {devices?.input?.length === 0 && !isLoadingDevices && (
-            <div className="text-xs text-amber-500 bg-amber-500/10 p-3 rounded-md">
-              <strong>
-                ⚠️ Click the refresh button to load your microphone devices.
-              </strong>{" "}
-              If this doesn't work, try changing your default microphone in your
-              system settings.
-            </div>
-          )}
-        </div>
-
-        {/* Tips */}
-        <div className="text-xs text-muted-foreground/70">
-          <p>
-            💡 <strong>Tip:</strong> When you select a microphone, the app will
-            immediately switch to that device. You can verify by hovering over
-            the microphone button in the main interface - it will show the
-            active device name.
+          <p className="min-h-5 text-xs text-muted-foreground" aria-live="polite">
+            {selectionStatus.input ||
+              (devices.input.length === 0 && !isLoadingDevices
+                ? "No microphone found. Check Windows input settings, then refresh."
+                : "")}
           </p>
         </div>
       </div>
@@ -232,19 +208,19 @@ export const AudioSelection = () => {
       <div className="space-y-3">
         <Header
           title="System Audio"
-          description="Select the output device to capture system sounds and application audio. If issues occur, set the correct default output in OS settings."
+          description="Choose the device where you hear the other speaker."
         />
 
         <div className="space-y-3">
           {/* Output Selection Dropdown */}
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <Select
+              <AuthoredSelect
                 value={selectedAudioDevices.output.id}
                 onValueChange={(value) => handleDeviceChange("output", value)}
                 disabled={isLoadingDevices || devices?.output?.length === 0}
               >
-                <SelectTrigger className="w-full h-11 border-1 border-input/50 focus:border-primary/50 transition-colors">
+                <SelectTrigger aria-label="System audio output" className="w-full h-11 border-1 border-input/50 focus:border-primary/50 transition-colors">
                   <div className="flex items-center gap-2">
                     <HeadphonesIcon className="size-4" />
                     <div className="text-sm font-medium truncate">
@@ -277,7 +253,7 @@ export const AudioSelection = () => {
                     </SelectItem>
                   ))}
                 </SelectContent>
-              </Select>
+              </AuthoredSelect>
 
               {/* Refresh button */}
               <Button
@@ -287,6 +263,7 @@ export const AudioSelection = () => {
                 disabled={isLoadingDevices}
                 className="h-11 w-11 shrink-0"
                 title="Refresh output device list"
+                aria-label="Refresh output device list"
               >
                 <RefreshCwIcon
                   className={`size-4 ${isLoadingDevices ? "animate-spin" : ""}`}
@@ -295,37 +272,26 @@ export const AudioSelection = () => {
             </div>
           </div>
 
-          {/* Success message */}
-          {showSuccess.output && (
-            <div className="text-xs text-green-500 bg-green-500/10 p-3 rounded-md">
-              <strong>✓ Output device changed successfully!</strong>
-              <br />
-              Using: {selectedAudioDevices.output.name || "Unknown device"}
-            </div>
-          )}
-
-          {/* Permission Notice */}
-          {devices?.output?.length === 0 && !isLoadingDevices && (
-            <div className="text-xs text-amber-500 bg-amber-500/10 p-3 rounded-md">
-              <strong>
-                ⚠️ Click the refresh button to load your system audio devices.
-              </strong>{" "}
-              If this doesn't work, try changing your default system audio
-              output in your system settings.
-            </div>
-          )}
-        </div>
-
-        {/* Tips */}
-        <div className="text-xs text-muted-foreground/70">
-          <p>
-            💡 <strong>Tip:</strong> System audio capture allows you to record
-            audio playing through your speakers or headphones. This is useful
-            for capturing conversation audio or system sounds along with your
-            voice.
+          <p className="min-h-5 text-xs text-muted-foreground" aria-live="polite">
+            {selectionStatus.output ||
+              (devices.output.length === 0 && !isLoadingDevices
+                ? "No output found. Check Windows output settings, then refresh."
+                : "")}
           </p>
         </div>
       </div>
+
+      {deviceLoadError && (
+        <p role="alert" className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-xs text-destructive">
+          {deviceLoadError}
+        </p>
+      )}
+
+      <AudioTest
+        key={`${selectedAudioDevices.input.id}:${selectedAudioDevices.output.id}`}
+        inputDevice={selectedAudioDevices.input}
+        outputDevice={selectedAudioDevices.output}
+      />
     </div>
   );
 };

@@ -1,7 +1,4 @@
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
   Button,
   GetLicense,
   Textarea,
@@ -59,23 +56,20 @@ export const GenerateSystemPrompt = ({
   };
 
   return (
-    <Popover open={isOpen} onOpenChange={setIsOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          aria-label="Generate with AI"
-          size="sm"
-          variant="outline"
-          className="w-fit"
-        >
-          <SparklesIcon className="h-4 w-4" /> Generate with AI
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="end"
-        side="bottom"
-        className="w-96 p-4 border shadow-lg"
+    <div className="rounded-xl border bg-muted/30">
+      <Button
+        aria-expanded={isOpen}
+        aria-controls="generate-system-prompt"
+        size="sm"
+        variant="ghost"
+        className="w-full justify-start"
+        onClick={() => setIsOpen((open) => !open)}
       >
-        <div className="space-y-3">
+        <SparklesIcon className="h-4 w-4" />
+        {isOpen ? "Close AI generator" : "Generate with AI"}
+      </Button>
+      {isOpen && (
+        <div id="generate-system-prompt" className="space-y-3 border-t p-4">
           <div>
             <p className="text-sm font-medium mb-1">Generate a system prompt</p>
             <p className="text-xs text-muted-foreground">
@@ -85,6 +79,7 @@ export const GenerateSystemPrompt = ({
           </div>
 
           <Textarea
+            aria-label="Describe the system prompt to generate"
             placeholder="e.g., I want an AI that helps me with code reviews and focuses on best practices..."
             className="min-h-[100px] resize-none border-1 border-input/50 focus:border-primary/50 transition-colors"
             value={userPrompt}
@@ -95,7 +90,7 @@ export const GenerateSystemPrompt = ({
             disabled={isGenerating}
           />
 
-          {error && <p className="text-xs text-destructive">{error}</p>}
+          {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
 
           {localFeaturesEnabled ? (
             <Button
@@ -129,7 +124,7 @@ export const GenerateSystemPrompt = ({
             </div>
           )}
         </div>
-      </PopoverContent>
-    </Popover>
+      )}
+    </div>
   );
 };

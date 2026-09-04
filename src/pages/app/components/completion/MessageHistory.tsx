@@ -9,6 +9,8 @@ import {
 } from "@/components";
 import { ChatMessage } from "@/types/completion";
 
+const HistoryTrigger = Button;
+
 interface MessageHistoryProps {
   conversationHistory: ChatMessage[];
   currentConversationId: string | null;
@@ -23,10 +25,17 @@ export const MessageHistory = ({
   messageHistoryOpen,
   setMessageHistoryOpen,
 }: MessageHistoryProps) => {
+  const handleNewChat = () => {
+    onStartNewConversation();
+    setMessageHistoryOpen(false);
+  };
+
+  const handleClose = () => setMessageHistoryOpen(false);
+
   return (
     <Popover open={messageHistoryOpen} onOpenChange={setMessageHistoryOpen}>
       <PopoverTrigger asChild>
-        <Button
+        <HistoryTrigger
           size="icon"
           variant="outline"
           aria-label="View Current Conversation"
@@ -36,7 +45,7 @@ export const MessageHistory = ({
             {conversationHistory.length}
           </div>
           <MessageSquareText className="h-5 w-5" />
-        </Button>
+        </HistoryTrigger>
       </PopoverTrigger>
 
       <PopoverContent
@@ -57,10 +66,7 @@ export const MessageHistory = ({
             <div className="flex items-center gap-2">
               <Button
                 size="sm"
-                onClick={() => {
-                  onStartNewConversation();
-                  setMessageHistoryOpen(false);
-                }}
+                onClick={handleNewChat}
                 className="text-xs"
               >
                 New Chat
@@ -68,7 +74,8 @@ export const MessageHistory = ({
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => setMessageHistoryOpen(false)}
+                onClick={handleClose}
+                aria-label="Close conversation history"
                 className="text-xs"
               >
                 {messageHistoryOpen ? (
@@ -83,7 +90,7 @@ export const MessageHistory = ({
 
         <ScrollArea className="h-[calc(100vh-10rem)]">
           <div className="p-4 space-y-4">
-            {conversationHistory
+            {[...conversationHistory]
               .sort((a, b) => b?.timestamp - a?.timestamp)
               .map((message) => (
                 <div

@@ -7,6 +7,7 @@ use hound::{WavSpec, WavWriter};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::io::Cursor;
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_shell::ShellExt;
@@ -50,6 +51,12 @@ struct AudioLevel {
     samples: usize,
 }
 
+#[derive(Clone, Serialize)]
+struct AudioTestInfo {
+    device_name: String,
+    sample_rate: u32,
+}
+
 #[derive(Default)]
 struct AudioMeter {
     sum_squares: f64,
@@ -67,11 +74,7 @@ impl AudioMeter {
     }
 
     fn emit(&mut self, app: &AppHandle) {
-        let level = AudioLevel {
-            rms: (self.sum_squares / self.samples.max(1) as f64).sqrt(),
-            peak: self.peak,
-            samples: self.samples,
-        };
+        let level = self.take_level();
         // Send signal metrics only, before the noise gate. No audio is stored.
         app.state::<crate::diagnostics::Diagnostics>()
             .capture(|capture| {
@@ -81,8 +84,101 @@ impl AudioMeter {
                 capture.last_level_at_ms = crate::diagnostics::now_ms();
             });
         let _ = app.emit("system-audio-level", level);
-        *self = Self::default();
     }
+
+    fn emit_test(&mut self, app: &AppHandle) {
+        let _ = app.emit("system-audio-test-level", self.take_level());
+    }
+
+    fn take_level(&mut self) -> AudioLevel {
+        let level = AudioLevel {
+            rms: (self.sum_squares / self.samples.max(1) as f64).sqrt(),
+            peak: self.peak,
+            samples: self.samples,
+        };
+        *self = Self::default();
+        level
+    }
+}
+
+async fn run_audio_test(app: AppHandle, stream: impl StreamExt<Item = f32> + Unpin) {
+    let mut stream = stream;
+    let mut meter = AudioMeter::default();
+    let mut meter_tick = tokio::time::interval(Duration::from_millis(100));
+
+    loop {
+        tokio::select! {
+            _ = meter_tick.tick() => meter.emit_test(&app),
+            sample = stream.next() => match sample {
+                Some(sample) => meter.push(sample),
+                None => {
+                    let _ = app.emit("system-audio-test-error", "The output device stopped. Choose another device and test again.");
+                    break;
+                }
+            }
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn start_system_audio_test(
+    app: AppHandle,
+    device_id: Option<String>,
+) -> Result<(), String> {
+    let state = app.state::<crate::AudioState>();
+    let mut current = state.stream_task.lock().await;
+    if current.as_ref().is_some_and(CaptureSession::is_active) {
+        return Err(
+            "Audio capture is already running. Stop Listen before testing this device.".to_string(),
+        );
+    }
+    if let Some(finished) = current.take() {
+        finished.wait().await;
+    }
+
+    let input = SpeakerInput::new_with_device(device_id)
+        .map_err(|error| format!("Failed to access system audio: {error}"))?;
+    let stream = input
+        .stream()
+        .map_err(|error| format!("Failed to start system audio: {error}"))?;
+    let sample_rate = stream.sample_rate();
+    if !(8000..=96000).contains(&sample_rate) {
+        return Err(format!("Unsupported sample rate: {sample_rate} Hz"));
+    }
+    let info = AudioTestInfo {
+        device_name: stream.device_name().chars().take(200).collect(),
+        sample_rate,
+    };
+    state.test_active.store(true, Ordering::Release);
+    let _ = app.emit("system-audio-test-started", info);
+
+    let test_app = app.clone();
+    let stopped_app = app.clone();
+    *current = Some(CaptureSession::spawn(
+        run_audio_test(test_app, stream),
+        None,
+        move || {
+            stopped_app
+                .state::<crate::AudioState>()
+                .test_active
+                .store(false, Ordering::Release);
+            let _ = stopped_app.emit("system-audio-test-stopped", ());
+        },
+    ));
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn stop_system_audio_test(app: AppHandle) -> Result<(), String> {
+    let state = app.state::<crate::AudioState>();
+    if !state.test_active.load(Ordering::Acquire) {
+        return Ok(());
+    }
+    let mut current = state.stream_task.lock().await;
+    if let Some(session) = current.take() {
+        session.discard().await;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -698,4 +794,22 @@ pub fn get_output_devices() -> Result<Vec<AudioDevice>, String> {
         error!("Failed to get output devices: {}", e);
         format!("Failed to get output devices: {}", e)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AudioMeter;
+
+    #[test]
+    fn audio_test_meter_reports_signal_without_retaining_samples() {
+        let mut meter = AudioMeter::default();
+        meter.push(0.25);
+        meter.push(-0.5);
+        let level = meter.take_level();
+
+        assert_eq!(level.samples, 2);
+        assert_eq!(level.peak, 0.5);
+        assert!(level.rms > 0.39 && level.rms < 0.40);
+        assert_eq!(meter.take_level().samples, 0);
+    }
 }

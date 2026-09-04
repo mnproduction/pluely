@@ -5,7 +5,7 @@ import {
   Slider,
   Switch,
   Textarea,
-  Select,
+  Select as AuthoredSelect,
   SelectContent,
   SelectItem,
   SelectTrigger,
@@ -251,11 +251,11 @@ export const SettingsPanel = ({
             {!useSystemPrompt && (
               <div className="space-y-2">
                 <div className="flex justify-end">
-                  <Select
+                  <AuthoredSelect
                     value={selectedTemplate}
                     onValueChange={handleTemplateSelection}
                   >
-                    <SelectTrigger className="w-auto h-7 text-xs">
+                    <SelectTrigger aria-label="Prompt template" className="w-auto h-7 text-xs">
                       <WandIcon className="w-3 h-3 mr-1.5" />
                       <SelectValue placeholder="Templates" />
                     </SelectTrigger>
@@ -275,7 +275,7 @@ export const SettingsPanel = ({
                         ))}
                       </SelectGroup>
                     </SelectContent>
-                  </Select>
+                  </AuthoredSelect>
                 </div>
                 <Textarea
                   placeholder="Enter custom system prompt and context..."

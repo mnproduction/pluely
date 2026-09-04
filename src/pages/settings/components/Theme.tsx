@@ -8,8 +8,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components";
 
+const ThemeMenuTrigger = Button;
+
 export const Theme = () => {
-  const { theme, transparency, setTheme, onSetTransparency } = useTheme();
+  const { theme, isSystemThemeDark, transparency, setTheme, onSetTransparency } = useTheme();
   const { localFeaturesEnabled } = useApp();
 
   return (
@@ -52,7 +54,9 @@ export const Theme = () => {
                 )}
               </Label>
               <p className="text-xs text-muted-foreground mt-1">
-                {theme === "light"
+                {theme === "system"
+                  ? `Following Windows (${isSystemThemeDark ? "dark" : "light"})`
+                  : theme === "light"
                   ? "Using light theme for better visibility in bright environments"
                   : "Using dark theme for comfortable viewing in low light"}
               </p>
@@ -60,7 +64,7 @@ export const Theme = () => {
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon">
+              <ThemeMenuTrigger variant="outline" size="icon" aria-label="Choose color theme" title="Choose color theme">
                 {theme === "system" ? (
                   <MonitorIcon className="h-[1.2rem] w-[1.2rem]" />
                 ) : (
@@ -69,7 +73,7 @@ export const Theme = () => {
                     <MoonIcon className="absolute h-[1.2rem] w-[1.2rem] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />
                   </>
                 )}
-              </Button>
+              </ThemeMenuTrigger>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => setTheme("light")}>

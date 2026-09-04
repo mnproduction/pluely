@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger,
   Button,
   Empty,
+  Badge,
 } from "@/components";
 import { useSystemPrompts } from "@/hooks";
 import {
@@ -20,11 +21,14 @@ import {
   Trash2,
   CheckCircle2,
   WandSparklesIcon,
+  XIcon,
 } from "lucide-react";
 import { DeleteSystemPrompt } from "./Delete";
 import { CreateEditDialog } from "./CreateEditDialog";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { PageLayout } from "@/layouts";
+
+const PromptActionsTrigger = "button";
 
 const SystemPrompts = () => {
   const {
@@ -40,6 +44,7 @@ const SystemPrompts = () => {
   } = useSystemPrompts();
 
   const [search, setSearch] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
   const [isCreateEditDialogOpen, setIsCreateEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -152,6 +157,12 @@ const SystemPrompts = () => {
   const handleCardClick = (promptId: number) => {
     handleSelectPrompt(promptId);
   };
+  const selectPrompt = (promptId: number) => () => handleCardClick(promptId);
+  const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => setSearch(event.target.value);
+  const clearSearch = () => {
+    setSearch("");
+    searchRef.current?.focus();
+  };
 
   /**
    * Filter prompts based on search
@@ -170,20 +181,27 @@ const SystemPrompts = () => {
       {/* Error Display */}
       {error && (
         <div className="mb-4 rounded-lg border border-destructive/20 bg-destructive/10 p-3">
-          <p className="text-sm text-destructive">{error}</p>
+          <p role="alert" className="text-sm text-destructive">{error}</p>
         </div>
       )}
       {/* Search Bar */}
       <div className="flex items-center gap-2 justify-between">
-        <div className="relative w-full md:w-1/2 lg:w-1/3 select-none">
+        <div className="relative w-full max-w-md select-none">
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
+            ref={searchRef}
             type="text"
-            placeholder="Search system prompts..."
-            className="pl-9 focus-visible:ring-0 focus-visible:ring-offset-0"
+            aria-label="Search system prompts"
+            placeholder="Search system prompts"
+            className="px-9 focus-visible:ring-2"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={handleSearchChange}
           />
+          {search && (
+            <Button type="button" size="icon" variant="ghost" className="absolute right-1 top-1/2 size-7 -translate-y-1/2" onClick={clearSearch} aria-label="Clear system prompt search" title="Clear search">
+              <XIcon className="size-3.5" />
+            </Button>
+          )}
         </div>
         <Button variant="default" size="default" onClick={handleCreateClick}>
           <PlusIcon className="size-4" />
@@ -194,31 +212,33 @@ const SystemPrompts = () => {
         <Empty
           isLoading={isLoading}
           icon={WandSparklesIcon}
-          title="No prompts found"
-          description="Create a new prompt to get started"
+          title={search ? "No matching prompts" : "No prompts yet"}
+          description={search ? "Try a different query or clear the search" : "Create a prompt to shape Mira's responses"}
         />
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 pb-4">
-          {filteredPrompts.reverse().map((prompt) => {
+          {[...filteredPrompts].reverse().map((prompt) => {
             const isSelected = selectedPromptId === prompt.id;
             return (
               <Card
                 key={prompt.id}
-                className={`relative border  lg:border-2 shadow-none p-4 pb-10 gap-0 group cursor-pointer transition-all hover:shadow-sm ${
+                className={`relative gap-0 border p-0 pb-10 shadow-none transition-all hover:shadow-sm lg:border-2 ${
                   isSelected
                     ? "!bg-primary/5 dark:!bg-primary/10 border-primary"
                     : "!bg-black/5 dark:!bg-white/5 border-transparent"
                 }`}
-                onClick={() => handleCardClick(prompt.id)}
               >
-                {isSelected && (
-                  <CheckCircle2 className="size-5 text-green-500 flex-shrink-0 absolute top-2 right-2" />
-                )}
-                <CardHeader className="p-0 pb-0 select-none">
+                <button type="button" aria-pressed={isSelected} className="w-full rounded-xl p-4 text-left outline-none focus-visible:ring-4 focus-visible:ring-ring/60" onClick={selectPrompt(prompt.id)}>
+                  {isSelected && (
+                    <Badge className="absolute right-2 top-2" aria-label="Active for Assistant">
+                      <CheckCircle2 className="size-3" /> Active
+                    </Badge>
+                  )}
+                  <CardHeader className="select-none p-0 pb-0">
                   <div className="flex items-start justify-between gap-2 relative">
                     <div className="flex-1 space-y-1.5">
                       <div className="flex items-center gap-2">
-                        <CardTitle className="text-[10px] text-base line-clamp-1 flex-1 pr-3">
+                        <CardTitle className="line-clamp-1 flex-1 pr-3 text-sm">
                           {prompt.name}
                         </CardTitle>
                       </div>
@@ -227,21 +247,21 @@ const SystemPrompts = () => {
                       </CardDescription>
                     </div>
                   </div>
-                </CardHeader>
-                <div className="absolute bottom-2 left-4 w-full flex items-center justify-between">
+                  </CardHeader>
+                </button>
+                <div className="absolute inset-x-4 bottom-2 flex items-center justify-between">
                   <span className="text-[10px] lg:text-xs text-muted-foreground select-none">
                     {prompt.created_at}
                   </span>
                   <DropdownMenu>
-                    <DropdownMenuTrigger asChild className="mr-6">
-                      <button
+                    <DropdownMenuTrigger asChild>
+                      <PromptActionsTrigger
+                        type="button"
+                        aria-label={`Actions for ${prompt.name}`}
                         className="flex size-8 items-center justify-center rounded-xl transition-opacity hover:bg-accent"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                        }}
                       >
                         <MoreHorizontal className="size-4 text-muted-foreground" />
-                      </button>
+                      </PromptActionsTrigger>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-40">
                       <DropdownMenuItem

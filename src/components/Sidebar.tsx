@@ -10,12 +10,19 @@ export const Sidebar = () => {
 
   const navigate = useNavigate();
   const activeRoute = useLocation().pathname;
+  const handleNavigate = (href: string) => () => navigate(href);
+  const handleOpenExternal = (link: string) => () => void openUrl(link);
+  const isActive = (href: string) =>
+    activeRoute === href || activeRoute.startsWith(`${href}/`);
+
   return (
     <aside className="flex w-56 flex-col select-none pt-2">
       {/* Logo */}
-      <div
-        onClick={() => navigate("/dashboard")}
-        className="flex h-16 items-center px-4 pt-10 gap-1.5"
+      <button
+        type="button"
+        onClick={handleNavigate("/dashboard")}
+        className="flex h-16 items-center gap-1.5 rounded-xl px-4 pt-10 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        aria-label="Open Mira Desk dashboard"
       >
         <img src="/mira-desk.svg" alt="" className="size-6 lg:size-7 rounded-lg" />
         <div className="flex flex-col">
@@ -26,17 +33,19 @@ export const Sidebar = () => {
             {isLoading ? "Loading..." : `(v${version})`}
           </span>
         </div>
-      </div>
+      </button>
 
       {/* Navigation */}
       <nav className="flex-1 space-y-1 px-3 py-6">
         {menu.map((item, index) => (
           <button
-            onClick={() => navigate(item.href)}
+            type="button"
+            onClick={handleNavigate(item.href)}
+            aria-current={isActive(item.href) ? "page" : undefined}
             key={`${item.label}-${index}`}
             className={cn(
               "flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-xs lg:text-sm text-sidebar-foreground/70 transition-all duration-300 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-              activeRoute.includes(item.href)
+              isActive(item.href)
                 ? "font-medium bg-sidebar-accent text-sidebar-accent-foreground"
                 : ""
             )}
@@ -60,32 +69,34 @@ export const Sidebar = () => {
             <Button
               key={`${item.title}-${index}`}
               title={item.title}
+              aria-label={item.title}
               size="sm"
               variant="outline"
-              onClick={() => openUrl(item.link)}
+              onClick={handleOpenExternal(item.link)}
             >
               <item.icon className="size-3 lg:size-4 transition-all duration-300" />
             </Button>
           ))}
         </div>
 
-        {footerItems.map((item, index) => (
-          <a
-            href={item.href}
-            onClick={item.action}
-            target="_blank"
-            rel="noopener noreferrer"
+        {footerItems.map((item, index) => {
+          const handleFooterAction = "action" in item
+            ? () => void item.action?.()
+            : handleOpenExternal(item.href);
+          return (
+          <button
+            type="button"
+            onClick={handleFooterAction}
             key={`${item.label}-${index}`}
-            className={cn(
-              "flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-xs lg:text-sm text-sidebar-foreground/70 transition-all duration-300 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-            )}
+            className={cn("flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-xs text-sidebar-foreground/70 transition-all duration-300 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-ring lg:text-sm")}
           >
             <div className="flex items-center gap-3">
               <item.icon className="size-3 lg:size-4 transition-all duration-300" />
               {item.label}
             </div>
-          </a>
-        ))}
+          </button>
+          );
+        })}
       </div>
     </aside>
   );

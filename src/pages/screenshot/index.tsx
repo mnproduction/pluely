@@ -7,7 +7,7 @@ const Settings = () => {
   return (
     <PageLayout
       title="Screenshot"
-      description="Manage your screenshot settings"
+      description="Choose what to capture and when to send it"
     >
       {/* Screenshot Configs */}
       <ScreenshotConfigs {...settings} />

@@ -22,7 +22,7 @@ export const validateCurl = (
     return {
       isValid: false,
       message:
-        "Invalid cURL command syntax. Please check for typos or try validating it on an online tool like reqbin.com/curl-online.",
+        "Invalid cURL command syntax. Check the command, quotes, headers, and request body.",
     };
   }
 
@@ -37,6 +37,17 @@ export const validateCurl = (
     return {
       isValid: false,
       message: `The following required variables are missing: ${missingVarsString}.`,
+    };
+  }
+
+  const hasCredentialHeader =
+    /(?:authorization|x-api-key|api-key)\s*:/i.test(curl);
+
+  if (hasCredentialHeader && !curl.includes("{{API_KEY}}")) {
+    return {
+      isValid: false,
+      message:
+        "Credential headers must use {{API_KEY}}. Store the value in the provider settings instead of the cURL command.",
     };
   }
 

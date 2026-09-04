@@ -15,6 +15,8 @@ export interface UseHistoryReturn {
   viewingConversation: ChatConversation | null;
   downloadedConversations: Set<string>;
   deleteConfirm: string | null;
+  deleteError: string | null;
+  isDeleting: boolean;
   isDownloaded: boolean;
   isAttached: boolean;
 
@@ -25,7 +27,7 @@ export interface UseHistoryReturn {
     e: React.MouseEvent
   ) => void;
   handleDeleteConfirm: (conversationId: string) => void;
-  confirmDelete: () => void;
+  confirmDelete: () => Promise<boolean>;
   cancelDelete: () => void;
   handleAttachToOverlay: (conversationId: string) => void;
   handleDownload: (
@@ -54,6 +56,8 @@ export function useHistory(): UseHistoryReturn {
   >(new Set());
 
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [isDownloaded, setIsDownloaded] = useState(false);
   const [isAttached, setIsAttached] = useState(false);
 
@@ -125,12 +129,15 @@ export function useHistory(): UseHistoryReturn {
   };
 
   const handleDeleteConfirm = (conversationId: string) => {
+    setDeleteError(null);
     setDeleteConfirm(conversationId);
   };
 
   const confirmDelete = async () => {
-    if (!deleteConfirm) return;
+    if (!deleteConfirm) return false;
 
+    setIsDeleting(true);
+    setDeleteError(null);
     try {
       setSelectedConversationId(null);
       setViewingConversation(null);
@@ -143,15 +150,20 @@ export function useHistory(): UseHistoryReturn {
           detail: deleteConfirm,
         })
       );
+      setDeleteConfirm(null);
+      return true;
     } catch (error) {
       console.error("Failed to delete conversation:", error);
+      setDeleteError("Mira Desk could not delete this conversation. Try again.");
+      return false;
     } finally {
-      setDeleteConfirm(null);
+      setIsDeleting(false);
     }
   };
 
   const cancelDelete = () => {
     setDeleteConfirm(null);
+    setDeleteError(null);
   };
 
   const handleAttachToOverlay = (conversationId: string) => {
@@ -216,6 +228,8 @@ export function useHistory(): UseHistoryReturn {
     viewingConversation,
     downloadedConversations,
     deleteConfirm,
+    deleteError,
+    isDeleting,
     isDownloaded,
     isAttached,
 

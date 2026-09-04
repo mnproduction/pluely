@@ -504,7 +504,10 @@ pub fn set_app_icon_visibility<R: Runtime>(app: AppHandle<R>, visible: bool) -> 
                             let _ = crate::window::apply_app_icon_policy(&restore_window, previous);
                         }
                     }
-                    return Err(format!("Failed to set {} taskbar visibility: {}", label, error));
+                    return Err(format!(
+                        "Failed to set {} taskbar visibility: {}",
+                        label, error
+                    ));
                 }
             }
         }

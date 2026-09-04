@@ -7,9 +7,32 @@ import { fetchSTT } from "../src/lib/functions/stt.function";
 import { fetchAIResponse } from "../src/lib/functions/ai-response.function";
 import { SPEECH_TO_TEXT_PROVIDERS } from "../src/config/stt.constants";
 import { AI_PROVIDERS } from "../src/config/ai-providers.constants";
+import { validateCurl } from "../src/lib/curl-validator";
 
 beforeEach(() => nativeFetch.mockReset());
 describe("direct provider requests", () => {
+  it("rejects a literal secret in a credential header", () => {
+    const result = validateCurl(
+      "curl https://example.com -H 'Authorization: Bearer test' --data '{{TEXT}}'",
+      ["TEXT"]
+    );
+    expect(result.isValid).toBe(false);
+    expect(result.message).toContain("{{API_KEY}}");
+  });
+
+  it("accepts credential placeholders and local providers without authentication", () => {
+    expect(
+      validateCurl(
+        "curl https://example.com -H 'Authorization: Bearer {{API_KEY}}' --data '{{TEXT}}'",
+        ["TEXT"]
+      ).isValid
+    ).toBe(true);
+    expect(
+      validateCurl("curl http://127.0.0.1:11434 --data '{{TEXT}}'", ["TEXT"])
+        .isValid
+    ).toBe(true);
+  });
+
   it.each(["http://api.x.ai/v1/stt", "http://localhost.evil.test", "http://[::1]:11434", "file:///C:/secret", "https://key@example.com", "https://api.x.ai/#secret"])("rejects unsafe URL %s before networking", async (url) => {
     await expect(providerFetch(url, {})).rejects.toThrow();
     expect(nativeFetch).not.toHaveBeenCalled();

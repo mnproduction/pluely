@@ -25,6 +25,11 @@ import {
   PopoverContent,
   PopoverTrigger,
   ScrollArea,
+  Select as AuthoredSelect,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@/components";
 import type { useSystemAudioType, SystemAudioLevel } from "@/hooks";
 import { cn } from "@/lib/utils";
@@ -146,6 +151,7 @@ export const SystemAudio = (props: useSystemAudioType) => {
         <Button
           size="icon"
           title={capturing ? "Stop Listen" : "Start Listen"}
+          aria-label={capturing ? "Stop Listen" : "Start Listen"}
           disabled={isAudioTransitioning}
           onClick={() => void (capturing ? stopCapture() : startCapture())}
           className={cn(
@@ -176,7 +182,7 @@ export const SystemAudio = (props: useSystemAudioType) => {
             />
           )}
 
-          <div className="flex h-full flex-col">
+          <div className="relative flex h-full flex-col">
             <header className="flex h-14 shrink-0 items-center justify-between border-b border-border/70 px-4">
               <div className="flex items-center gap-3">
                 <div className="flex size-8 items-center justify-center rounded-xl bg-primary text-primary-foreground"><AudioLinesIcon className="size-4" /></div>
@@ -185,13 +191,13 @@ export const SystemAudio = (props: useSystemAudioType) => {
                     <h2 className="text-sm font-semibold">Listen</h2>
                     <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", isPaused ? "bg-amber-100 text-amber-800" : capturing ? "bg-emerald-100 text-emerald-800" : "bg-muted text-muted-foreground")}>{isPaused ? "Paused" : capturing ? "Live" : "Finished"}</span>
                   </div>
-                  <p className="text-[10px] text-muted-foreground">Interview profile · {formatDuration(elapsed)}</p>
+                  <p className="text-[10px] text-muted-foreground">Two-channel session · {formatDuration(elapsed)}</p>
                 </div>
               </div>
               <div className="flex items-center gap-1">
-                <Button size="icon" variant="ghost" className="size-8" title="New session" onClick={startNewConversation}><PlusIcon className="size-4" /></Button>
-                <Button size="icon" variant="ghost" className="size-8" title="Open settings" onClick={openDashboard}><Settings2Icon className="size-4" /></Button>
-                {!capturing && <Button size="icon" variant="ghost" className="size-8" title="Close" onClick={() => { setIsPopoverOpen(false); resizeWindow(false); }}><XIcon className="size-4" /></Button>}
+                <Button size="icon" variant="ghost" className="size-8" title="New session" aria-label="Start a new session" onClick={startNewConversation}><PlusIcon className="size-4" /></Button>
+                <Button size="icon" variant="ghost" className="size-8" title="Open dashboard" aria-label="Open dashboard" onClick={openDashboard}><Settings2Icon className="size-4" /></Button>
+                {!capturing && <Button size="icon" variant="ghost" className="size-8" title="Close" aria-label="Close Listen" onClick={() => { setIsPopoverOpen(false); resizeWindow(false); }}><XIcon className="size-4" /></Button>}
               </div>
             </header>
 
@@ -264,13 +270,14 @@ export const SystemAudio = (props: useSystemAudioType) => {
                 <section className="shrink-0 border-t bg-muted/10 px-4 py-3">
                   <div className="mb-2 flex items-center gap-2">
                     <input
+                      aria-label="Ask Mira about this conversation"
                       value={followUp}
                       onChange={(event) => setFollowUp(event.target.value)}
                       onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submitFollowUp(); } }}
                       placeholder="Ask Mira about this conversation..."
                       className="h-9 min-w-0 flex-1 rounded-xl border bg-background px-3 text-xs outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10"
                     />
-                    <Button size="icon" className="size-9" title="Send follow-up" disabled={!transcriptTurns.length || isAudioTransitioning} onClick={() => void submitFollowUp()}><SendIcon className="size-4" /></Button>
+                    <Button size="icon" className="size-9" title={!transcriptTurns.length ? "Available after the first transcript segment" : "Send follow-up"} aria-label="Send follow-up" disabled={!transcriptTurns.length || isAudioTransitioning} onClick={() => void submitFollowUp()}><SendIcon className="size-4" /></Button>
                   </div>
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-2 text-[10px] text-muted-foreground">
@@ -278,16 +285,23 @@ export const SystemAudio = (props: useSystemAudioType) => {
                       <span className="truncate">{isPaused ? "Capture paused" : isAIProcessing ? "Generating response" : isProcessing ? "Transcribing speech" : capturing ? "Listening to both channels" : "Session finished"}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <select aria-label="Automatic response mode" value={autoResponseMode} onChange={(event) => setAutoResponseMode(event.target.value as AutoResponseMode)} className="h-8 rounded-xl border bg-background px-2 text-[10px] outline-none">
-                        <option value="questions">Auto: questions</option><option value="pause">Auto: every pause</option><option value="off">Auto: off</option>
-                      </select>
+                      <AuthoredSelect value={autoResponseMode} onValueChange={(value) => setAutoResponseMode(value as AutoResponseMode)}>
+                        <SelectTrigger className="h-8 w-[132px] rounded-xl px-2 text-[10px]" aria-label="Automatic response mode">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent position="popper" align="end" className="min-w-[var(--radix-select-trigger-width)]">
+                          <SelectItem value="questions">Auto: questions</SelectItem>
+                          <SelectItem value="pause">Auto: every pause</SelectItem>
+                          <SelectItem value="off">Auto: off</SelectItem>
+                        </SelectContent>
+                      </AuthoredSelect>
                       <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!transcriptTurns.length || isAudioTransitioning} onClick={() => void suggestResponse()}><SparklesIcon className="size-3.5" />Suggest</Button>
                       {capturing && <Button size="sm" variant="outline" className="h-8 text-xs" disabled={isAudioTransitioning} onClick={() => void (isPaused ? resumeCapture() : pauseCapture())}>{isPaused ? <PlayIcon className="size-3.5" /> : <PauseIcon className="size-3.5" />}{isPaused ? "Resume" : "Pause"}</Button>}
                       {capturing && <Button size="sm" variant="destructive" className="h-8 text-xs" disabled={isAudioTransitioning} onClick={() => void stopCapture()}><CircleStopIcon className="size-3.5" />Stop</Button>}
-                      <Button size="icon" variant="ghost" className="size-8" title="Session settings and diagnostics" onClick={() => setShowDiagnostics((value) => !value)}><Settings2Icon className="size-3.5" /></Button>
+                      <Button size="icon" variant="ghost" className="size-8" title="Session settings and diagnostics" aria-label={`${showDiagnostics ? "Close" : "Open"} session settings and diagnostics`} aria-expanded={showDiagnostics} onClick={() => setShowDiagnostics((value) => !value)}><Settings2Icon className="size-3.5" /></Button>
                     </div>
                   </div>
-                  {showDiagnostics && <div className="mt-3 grid max-h-72 grid-cols-2 gap-2 overflow-y-auto pr-1">
+                  {showDiagnostics && <div role="region" aria-label="Session settings and diagnostics" className="absolute inset-x-4 bottom-[76px] z-30 grid max-h-[430px] grid-cols-2 gap-3 overflow-y-auto rounded-2xl border bg-background p-3 shadow-2xl">
                     <SettingsPanel
                       vadConfig={vadConfig}
                       onUpdateVadConfig={updateVadConfiguration}

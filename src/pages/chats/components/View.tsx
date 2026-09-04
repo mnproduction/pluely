@@ -45,6 +45,8 @@ const View = () => {
     confirmDelete,
     cancelDelete,
     deleteConfirm,
+    deleteError,
+    isDeleting,
     handleAttachToOverlay,
     handleDownload,
     isDownloaded,
@@ -77,8 +79,7 @@ const View = () => {
   }, [messages?.messages.length]);
 
   const handleDelete = async () => {
-    await confirmDelete();
-    navigate(-1);
+    if (await confirmDelete()) navigate(-1);
   };
 
   return (
@@ -87,6 +88,7 @@ const View = () => {
       allowBackButton={true}
       title={messages?.title || ""}
       description={`${messages?.messages.length} messages in this conversation`}
+      contentClassName="gap-0 pb-0"
       rightSlot={
         <div className="flex flex-row items-center gap-2">
           <Button
@@ -105,7 +107,7 @@ const View = () => {
               </>
             ) : (
               <>
-                Open in Overlay{" "}
+                Use in Assistant{" "}
                 <MessageCircleReplyIcon className="size-3 lg:size-4" />
               </>
             )}
@@ -149,7 +151,7 @@ const View = () => {
           description="Start a new message to get started"
         />
       ) : (
-        <div className="flex flex-col gap-4 pb-24 px-2">
+        <div className="flex flex-1 flex-col gap-4 px-2 pb-4">
           {messages?.messages.map((message, index, array) => {
             const isUser = message.role === "user";
             const showDate =
@@ -226,10 +228,10 @@ const View = () => {
       )}
 
       {/* Sticky Footer Input */}
-      <div className="absolute bottom-0 left-0 right-0 bg-background/10 backdrop-blur">
+      <div className="sticky bottom-0 z-20 -mx-1 mt-auto border-t bg-background/95 backdrop-blur">
         {completion.error && (
           <div className="px-4 pt-3 pb-0">
-            <div className="p-2 bg-destructive/10 border border-destructive/20 rounded text-sm text-destructive">
+            <div role="alert" className="p-2 bg-destructive/10 border border-destructive/20 rounded text-sm text-destructive">
               <strong>Error:</strong> {completion.error}
             </div>
           </div>
@@ -261,7 +263,7 @@ const View = () => {
               />
             ) : (
               <>
-                <div className="absolute bottom-2 left-2 flex items-center gap-1 z-10">
+                <div aria-label="Message attachments" role="group" className="absolute bottom-2 left-2 flex items-center gap-1 z-10">
                   <ChatFiles
                     attachedFiles={completion.attachedFiles}
                     handleFileSelect={completion.handleFileSelect}
@@ -291,6 +293,7 @@ const View = () => {
 
                 <Textarea
                   ref={completion.inputRef}
+                  aria-label="Message"
                   placeholder="Type a message..."
                   className="pr-12 pl-2 resize-none pb-12 pt-3"
                   rows={2}
@@ -328,6 +331,8 @@ const View = () => {
         deleteConfirm={deleteConfirm}
         cancelDelete={cancelDelete}
         confirmDelete={handleDelete}
+        error={deleteError}
+        isDeleting={isDeleting}
       />
     </PageLayout>
   );

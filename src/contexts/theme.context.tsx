@@ -12,6 +12,7 @@ type ThemeProviderProps = {
 type ThemeProviderState = {
   theme: Theme;
   setTheme: (theme: Theme) => void;
+  isSystemThemeDark: boolean;
   transparency: number;
   onSetTransparency: (transparency: number) => void;
 };
@@ -19,6 +20,7 @@ type ThemeProviderState = {
 const initialState: ThemeProviderState = {
   theme: "system",
   setTheme: () => null,
+  isSystemThemeDark: false,
   transparency: 10,
   onSetTransparency: () => null,
 };

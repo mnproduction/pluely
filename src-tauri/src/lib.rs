@@ -5,8 +5,10 @@ mod diagnostics;
 mod private_store;
 mod shortcuts;
 mod window;
-use std::sync::Mutex;
-use tauri::{AppHandle, Manager, WebviewWindow};
+use std::sync::{atomic::AtomicBool, Mutex};
+use tauri::Manager;
+#[cfg(target_os = "macos")]
+use tauri::{AppHandle, WebviewWindow};
 mod speaker;
 use capture::CaptureState;
 use speaker::VadConfig;
@@ -19,6 +21,7 @@ use tauri_nspanel::{cocoa::appkit::NSWindowCollectionBehavior, panel_delegate, W
 pub struct AudioState {
     stream_task: tokio::sync::Mutex<Option<speaker::CaptureSession>>,
     vad_config: Mutex<VadConfig>,
+    test_active: AtomicBool,
 }
 
 #[tauri::command]
@@ -41,7 +44,7 @@ pub fn run() {
             eprintln!("Failed to show the existing instance: {}", error);
         }
     }));
-    let mut builder = builder
+    let builder = builder
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations("sqlite:pluely.db", db::migrations())
@@ -61,10 +64,8 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_shell::init());
     #[cfg(target_os = "macos")]
-    {
-        builder = builder.plugin(tauri_nspanel::init());
-    }
-    let mut builder = builder
+    let builder = builder.plugin(tauri_nspanel::init());
+    let builder = builder
         .invoke_handler(tauri::generate_handler![
             get_app_version,
             diagnostics::diagnostics_start,
@@ -92,6 +93,8 @@ pub fn run() {
             shortcuts::exit_app,
             speaker::start_system_audio_capture,
             speaker::stop_system_audio_capture,
+            speaker::start_system_audio_test,
+            speaker::stop_system_audio_test,
             speaker::manual_stop_continuous,
             speaker::check_system_audio_access,
             speaker::request_system_audio_access,

@@ -1,35 +1,50 @@
-import { Button } from "@/components";
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components";
 
 interface DeleteConfirmationDialogProps {
   deleteConfirm: string | null;
   cancelDelete: () => void;
-  confirmDelete: () => void;
+  confirmDelete: () => void | Promise<void>;
+  error?: string | null;
+  isDeleting?: boolean;
 }
 
 export const DeleteConfirmationDialog = ({
   deleteConfirm,
   cancelDelete,
   confirmDelete,
+  error,
+  isDeleting = false,
 }: DeleteConfirmationDialogProps) => {
-  if (!deleteConfirm) return null;
-
   return (
-    <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-background border rounded-lg p-6 max-w-md mx-4">
-        <h3 className="text-lg font-semibold mb-2">Delete Conversation</h3>
-        <p className="text-sm text-muted-foreground mb-4">
-          Are you sure you want to delete this conversation? This action cannot
-          be undone.
-        </p>
-        <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={cancelDelete}>
+    <Dialog
+      open={Boolean(deleteConfirm)}
+      onOpenChange={(open) => !open && cancelDelete()}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Delete conversation?</DialogTitle>
+          <DialogDescription>
+            This permanently removes the conversation and its local messages.
+          </DialogDescription>
+        </DialogHeader>
+        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+        <DialogFooter>
+          <Button variant="outline" onClick={cancelDelete} disabled={isDeleting}>
             Cancel
           </Button>
-          <Button variant="destructive" onClick={confirmDelete}>
-            Delete
+          <Button variant="destructive" onClick={confirmDelete} disabled={isDeleting} aria-busy={isDeleting}>
+            {isDeleting ? "Deleting..." : "Delete conversation"}
           </Button>
-        </div>
-      </div>
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 };
